@@ -39,3 +39,14 @@ def test_visible_entries_filters(tmp_path, monkeypatch):
     store.update_entry(l["id"], status="active", show_on_open=False)
     assert l["id"] not in {e["id"] for e in store.visible_entries()}
     assert l["id"] in {e["id"] for e in store.visible_entries(include_hidden=True)}
+
+def test_load_all_skips_corrupt_line(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    good = {"id": "abc123", "type": "note", "title": "t", "body": "b", "tags": [],
+            "scope": "global", "cwd": None, "status": "active",
+            "show_on_open": True, "created": "t", "updated": "t"}
+    (tmp_path / "tnotes.jsonl").write_text(
+        "{bad json line\n" + json.dumps(good) + "\n", encoding="utf-8")
+    entries = store.load_all()
+    assert [e["id"] for e in entries] == ["abc123"]
+    assert "corrupt line 1" in capsys.readouterr().err

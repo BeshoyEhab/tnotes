@@ -10,11 +10,22 @@ def _nth(actions_list: list[dict], kind: str, n: int) -> dict | None:
     return items[n - 1] if 1 <= n <= len(items) else None
 
 def cmd_open(args) -> int:
-    e = store.get_entry(args.arg)
+    try:
+        e = store.get_entry(args.arg)
+    except KeyError as exc:
+        print(exc, file=sys.stderr)
+        return 1
     if not e:
         print(f"no entry {args.arg}", file=sys.stderr)
         return 1
-    n = int(getattr(args, "n", 1) or 1)
+    try:
+        n = int(getattr(args, "n", 1) or 1)
+    except (ValueError, TypeError):
+        print(f"invalid index {getattr(args, 'n', None)!r}", file=sys.stderr)
+        return 1
+    if n < 1:
+        print(f"invalid index {n}", file=sys.stderr)
+        return 1
     target = _nth(extract_actions(e), "open", n)
     if not target:
         print(f"no open action #{n} on {e['id']}", file=sys.stderr)
@@ -22,11 +33,22 @@ def cmd_open(args) -> int:
     return actions.open_target(target["target"])
 
 def cmd_run(args) -> int:
-    e = store.get_entry(args.arg)
+    try:
+        e = store.get_entry(args.arg)
+    except KeyError as exc:
+        print(exc, file=sys.stderr)
+        return 1
     if not e:
         print(f"no entry {args.arg}", file=sys.stderr)
         return 1
-    n = int(getattr(args, "n", 1) or 1)
+    try:
+        n = int(getattr(args, "n", 1) or 1)
+    except (ValueError, TypeError):
+        print(f"invalid index {getattr(args, 'n', None)!r}", file=sys.stderr)
+        return 1
+    if n < 1:
+        print(f"invalid index {n}", file=sys.stderr)
+        return 1
     target = _nth(extract_actions(e), "run", n)
     if not target:
         print(f"no run action #{n} on {e['id']}", file=sys.stderr)
@@ -36,7 +58,10 @@ def cmd_run(args) -> int:
 def _handle_picked(key: str | None, entry_id: str | None) -> int:
     if not entry_id:
         return 0 if key is None else 1
-    e = store.get_entry(entry_id)
+    try:
+        e = store.get_entry(entry_id)
+    except KeyError:
+        return 1
     if not e:
         return 1
     acts = extract_actions(e)

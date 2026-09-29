@@ -2,6 +2,7 @@
 import json
 import os
 import secrets
+import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,9 +32,15 @@ def load_all() -> list[dict]:
     if not p.exists():
         return []
     entries = []
+    lineno = 0
     for line in p.read_text(encoding="utf-8").splitlines():
+        lineno += 1
         if line.strip():
-            entries.append(json.loads(line))
+            try:
+                entries.append(json.loads(line))
+            except json.JSONDecodeError:
+                print(f"warning: skipping corrupt line {lineno} in {store_path()}", file=sys.stderr)
+                continue
     return entries
 
 def save_all(entries: list[dict]) -> None:
@@ -68,27 +75,38 @@ def add_entry(type: str, title: str, body: str, tags: list[str],
     save_all(entries)
     return entry
 
+def _match(entries: list[dict], entry_id: str) -> dict | None:
+    if not entry_id:
+        raise KeyError(f"no entry {entry_id!r}")
+    exact = [e for e in entries if e["id"] == entry_id]
+    if exact:
+        return exact[0]
+    pref = [e for e in entries if e["id"].startswith(entry_id)]
+    if len(pref) == 1:
+        return pref[0]
+    if not pref:
+        return None
+    raise KeyError(f"ambiguous prefix {entry_id!r} ({len(pref)} matches)")
+
 def get_entry(entry_id: str) -> dict | None:
-    for e in load_all():
-        if e["id"] == entry_id or e["id"].startswith(entry_id):
-            return e
-    return None
+    return _match(load_all(), entry_id)
 
 def update_entry(entry_id: str, **fields) -> dict:
     entries = load_all()
-    for e in entries:
-        if e["id"] == entry_id or e["id"].startswith(entry_id):
-            e.update(fields)
-            e["updated"] = _now_iso()
-            save_all(entries)
-            return e
-    raise KeyError(f"no entry {entry_id}")
+    e = _match(entries, entry_id)
+    if e is None:
+        raise KeyError(f"no entry {entry_id}")
+    e.update(fields)
+    e["updated"] = _now_iso()
+    save_all(entries)
+    return e
 
 def delete_entry(entry_id: str) -> bool:
     entries = load_all()
-    kept = [e for e in entries if not (e["id"] == entry_id or e["id"].startswith(entry_id))]
-    if len(kept) == len(entries):
+    e = _match(entries, entry_id)
+    if e is None:
         return False
+    kept = [x for x in entries if x["id"] != e["id"]]
     save_all(kept)
     return True
 

@@ -101,7 +101,11 @@ def _page(text: str) -> None:
 
 def cmd_show(args) -> int:
     if args.arg:  # show <id> [--preview]
-        e = store.get_entry(args.arg)
+        try:
+            e = store.get_entry(args.arg)
+        except KeyError as exc:
+            print(exc, file=sys.stderr)
+            return 1
         if not e:
             print(f"no entry {args.arg}", file=sys.stderr)
             return 1

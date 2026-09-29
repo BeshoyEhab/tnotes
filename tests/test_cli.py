@@ -66,3 +66,25 @@ def test_list_hides_done_unless_flag(tmp_path, monkeypatch, capsys):
     assert e["id"] not in capsys.readouterr().out
     assert main(["list", "--done"]) == 0
     assert e["id"] in capsys.readouterr().out
+
+def test_ambiguous_prefix_rm_deletes_nothing(tmp_path, monkeypatch, capsys):
+    import json
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    def _ent(eid):
+        return {"id": eid, "type": "note", "title": "t", "body": "b", "tags": [],
+                "scope": "global", "cwd": None, "status": "active",
+                "show_on_open": True, "created": "t", "updated": "t"}
+    (tmp_path / "tnotes.jsonl").write_text(
+        json.dumps(_ent("abcdef")) + "\n" + json.dumps(_ent("abc123")) + "\n",
+        encoding="utf-8")
+    assert main(["rm", "abc"]) == 1
+    ids = {e["id"] for e in store.load_all()}
+    assert ids == {"abcdef", "abc123"}
+
+def test_open_invalid_index_no_traceback(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    e = store.add_entry(type="note", title="t", body="b", tags=[],
+                        scope="global", cwd=None, show_on_open=True)
+    assert main(["open", e["id"], "foo"]) == 1
+    err = capsys.readouterr().err
+    assert "invalid index" in err

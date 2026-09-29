@@ -95,7 +95,7 @@ def cmd_add(args) -> int:
         return 1
     body = body.strip()
     scope, cwd = _resolve_scope(args)
-    title = args.title or (body.splitlines()[0][:60] if etype != "note" else body[:60])
+    title = args.title or body.splitlines()[0][:60]
     e = store.add_entry(type=etype, title=title, body=body,
                         tags=_split_tags(args.tags), scope=scope, cwd=cwd,
                         show_on_open=not args.no_show)
@@ -160,14 +160,22 @@ def main(argv: list[str] | None = None) -> int:
             print(f"no entry {args.arg}", file=sys.stderr)
             return 1
     if args.sub == "rm":
-        if store.delete_entry(args.arg):
-            print(f"removed {args.arg}")
-            return 0
+        try:
+            if store.delete_entry(args.arg):
+                print(f"removed {args.arg}")
+                return 0
+        except KeyError as exc:
+            print(exc, file=sys.stderr)
+            return 1
         print(f"no entry {args.arg}", file=sys.stderr)
         return 1
     if args.sub == "edit":
         from .extract import extract_actions  # noqa: F401 (used Task 5)
-        e = store.get_entry(args.arg)
+        try:
+            e = store.get_entry(args.arg)
+        except KeyError as exc:
+            print(exc, file=sys.stderr)
+            return 1
         if not e:
             print(f"no entry {args.arg}", file=sys.stderr)
             return 1
