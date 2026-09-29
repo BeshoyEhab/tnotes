@@ -42,3 +42,27 @@ def test_editor_failure_keeps_draft(tmp_path, monkeypatch, capsys):
     assert main(["edit", e["id"]]) == 1
     tmp = capsys.readouterr().out.strip().split()[-1]
     assert Path(tmp).exists()
+
+def test_show_startup_silent_when_empty(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    assert main(["show", "--startup"]) == 0
+    assert capsys.readouterr().out == ""
+
+def test_preview_caps_100_lines(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    body = "\n".join(f"line {i}" for i in range(150))
+    e = store.add_entry(type="note", title="big", body=body, tags=[],
+                        scope="global", cwd=None, show_on_open=True)
+    assert main(["show", e["id"], "--preview"]) == 0
+    out = capsys.readouterr().out
+    assert "… (+50 lines, Enter for full)" in out
+    assert "line 99" in out and "line 100" not in out
+
+def test_list_hides_done_unless_flag(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    e = store.add_entry(type="note", title="t", body="b", tags=[], scope="global", cwd=None, show_on_open=True)
+    store.update_entry(e["id"], status="done")
+    assert main(["list"]) == 0
+    assert e["id"] not in capsys.readouterr().out
+    assert main(["list", "--done"]) == 0
+    assert e["id"] in capsys.readouterr().out
