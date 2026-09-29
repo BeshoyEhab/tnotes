@@ -99,6 +99,24 @@ def _page(text: str) -> None:
     except OSError:
         print(text, end="")
 
+def _rich_preview(text: str) -> str:
+    """Render preview markdown with color via mdcat when suitable, else plain."""
+    if not shutil.which("mdcat"):
+        return text
+    if not (sys.stdout.isatty() or "FZF_PREVIEW_COLUMNS" in os.environ):
+        return text  # piped elsewhere: keep output clean
+    cmd = ["mdcat", "--ansi", "-l"]
+    cols = os.environ.get("FZF_PREVIEW_COLUMNS", "")
+    if cols.isdigit():
+        cmd += ["--columns", cols]
+    try:
+        p = subprocess.run(cmd, input=text.encode(), capture_output=True)
+    except OSError:
+        return text
+    if p.returncode != 0 or not p.stdout:
+        return text
+    return p.stdout.decode()
+
 def cmd_show(args) -> int:
     if args.arg:  # show <id> [--preview]
         try:
@@ -110,7 +128,7 @@ def cmd_show(args) -> int:
             print(f"no entry {args.arg}", file=sys.stderr)
             return 1
         if getattr(args, "preview", False):
-            sys.stdout.write(render_preview(e, extract_actions(e)))
+            sys.stdout.write(_rich_preview(render_preview(e, extract_actions(e))))
         else:
             _page(render_full(e, extract_actions(e)))
         return 0

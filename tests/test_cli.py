@@ -88,3 +88,52 @@ def test_open_invalid_index_no_traceback(tmp_path, monkeypatch, capsys):
     assert main(["open", e["id"], "foo"]) == 1
     err = capsys.readouterr().err
     assert "invalid index" in err
+
+def test_ctrl_n_compose_saves_note(tmp_path, monkeypatch, capsys):
+    import os
+    from tnotes import cli as C
+    from tnotes.cli_actions import dispatch
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    import tnotes.picker as P
+    monkeypatch.setattr(P, "run_picker", lambda entries: ("ctrl-n", "buy milk"))
+    monkeypatch.setattr(C, "compose_in_editor", lambda et, initial="": "buy milk\n")
+    args = C.build_parser().parse_args([])
+    assert dispatch(args) == 0
+    assert "saved" in capsys.readouterr().out
+    assert len(store.load_all()) == 1
+
+def test_empty_store_goes_to_compose(tmp_path, monkeypatch, capsys):
+    from tnotes import cli as C
+    from tnotes.cli_actions import dispatch
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(C, "compose_in_editor", lambda et, initial="": "first!\n")
+    assert dispatch(C.build_parser().parse_args([])) == 0
+    assert "saved" in capsys.readouterr().out
+
+def test_preview_mdcat_when_present(tmp_path, monkeypatch, capsys):
+    import shutil
+    import tnotes.cli_read as R
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    monkeypatch.setenv("FZF_PREVIEW_COLUMNS", "60")
+    monkeypatch.setattr(shutil, "which", lambda n: "/usr/bin/mdcat" if n == "mdcat" else None)
+    def fake_run(cmd, input=None, capture_output=False, **kw):
+        assert "mdcat" in cmd[0] and "--ansi" in cmd
+        class P2:
+            returncode = 0
+            stdout = b"PRETTY:" + (input or b"")
+        return P2()
+    monkeypatch.setattr(R.subprocess, "run", fake_run)
+    e = store.add_entry(type="note", title="t", body="hello", tags=[], scope="global", cwd=None, show_on_open=True)
+    assert main(["show", e["id"], "--preview"]) == 0
+    assert "PRETTY:" in capsys.readouterr().out
+
+def test_preview_plain_without_mdcat(tmp_path, monkeypatch, capsys):
+    import shutil
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    monkeypatch.setattr(shutil, "which", lambda n: None)
+    e = store.add_entry(type="note", title="t", body="hello", tags=[], scope="global", cwd=None, show_on_open=True)
+    assert main(["show", e["id"], "--preview"]) == 0
+    out = capsys.readouterr().out
+    assert "hello" in out and "PRETTY:" not in out

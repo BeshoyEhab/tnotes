@@ -1,4 +1,5 @@
 """Picker entry + open/run/copy/edit key handling."""
+import os
 import sys
 from . import store, actions
 from .extract import extract_actions
@@ -55,7 +56,22 @@ def cmd_run(args) -> int:
         return 1
     return actions.run_command(target["target"], confirm=True)
 
+def _compose_new_note(initial: str) -> int:
+    from .cli import compose_in_editor
+    text = compose_in_editor("note", initial=initial)
+    if not text or not text.strip():
+        print("discarded (empty).")
+        return 1
+    body = text.strip()
+    e = store.add_entry(type="note", title=body.splitlines()[0][:60], body=body,
+                        tags=[], scope="local",
+                        cwd=os.path.realpath(os.getcwd()), show_on_open=True)
+    print(f"saved {e['id']}")
+    return 0
+
 def _handle_picked(key: str | None, entry_id: str | None) -> int:
+    if key == "ctrl-n":
+        return _compose_new_note(entry_id or "")
     if not entry_id:
         return 0 if key is None else 1
     try:
@@ -89,7 +105,7 @@ def dispatch(args) -> int:
         return cmd_run(args)
     # bare tn picker: tn [--all] [-g|-l] [--done] [--hidden]
     entries = _entries_for(args, cwd=None)
-    if not getattr(args, "hidden", False):
-        pass  # picker shows hidden by default (include_hidden=True in _entries_for)
+    if not entries:
+        return _compose_new_note("")  # nothing to pick: straight to editor
     key, eid = P.run_picker(entries)
     return _handle_picked(key, eid)
