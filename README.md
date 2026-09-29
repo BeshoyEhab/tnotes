@@ -3,17 +3,44 @@
 `tn` stores typed entries (url, cmd, note) in JSONL and previews safely first,
 then open / run / copy / edit from the terminal.
 
+## Requirements
+
+Required:
+
+| Need | Version / note |
+|---|---|
+| Python | ≥ 3.12 (`requires-python = ">=3.12"`, zero third-party deps) |
+| `fzf` binary | picker UI; without it `tn` falls back to `tn list` |
+| `uv` **or** `pip` | install only (`pip install -e .` needs network for the `hatchling` build backend) |
+| `~/.local/bin` on your `PATH` | for the `tn` shim |
+
+Optional (every one has a fallback — `tn` works without them):
+
+| Need | Used for | Fallback |
+|---|---|---|
+| `bat` | full-entry view | plain text via `$PAGER` |
+| `$PAGER` (e.g. `less -R`) | full-entry view, big notes | prints to stdout |
+| `wl-copy` → `xclip` → `xsel` | `c` copy key | prints content + path |
+| `xdg-open` → `$BROWSER` | `o` open key | prints the URL |
+| `$EDITOR` → `$VISUAL` → `vi` | `-m` compose, `e` edit | — |
+| `fish` | autoshow hook + completions | everything else works in any shell |
+
+Environment variables: `TNOTES_DIR` (store dir, default
+`~/.local/share/tnotes`), `EDITOR`/`VISUAL`, `BROWSER`, `PAGER`,
+`NOTE_AUTOSHOW_GLOBAL=1` (autoshow globals too, default is this-dir only).
+
 ## Install
 
-uv sync
-ln -sf ~/tnotes/.venv/bin/tn ~/.local/bin/tn   # or: pipx / uv tool install
+```bash
+git clone <repo-url> ~/tnotes && cd ~/tnotes
+uv sync                             # or: pip install -e .
+ln -sf ~/tnotes/.venv/bin/tn ~/.local/bin/tn   # or wherever your pipx/uv-tool tn lives
 mkdir -p ~/.config/fish/conf.d ~/.config/fish/completions
 ln -sf ~/tnotes/fish/conf.d/tnotes-autoshow.fish ~/.config/fish/conf.d/
 ln -sf ~/tnotes/fish/completions/tn.fish ~/.config/fish/completions/
-
-Fallback without uv:
-
-pip install -e .   # tests need the package installed: run `python -m pytest` only after `uv sync` or `pip install -e .`
+tn path                             # prints store path; run once to confirm install
+python -m pytest -q                 # optional sanity check (needs the install above first)
+```
 
 Old `note` (~/.local/bin/note + fish hooks) keeps working until sunset — do not delete yet.
 
