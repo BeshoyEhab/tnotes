@@ -125,6 +125,8 @@ def build_parser() -> argparse.ArgumentParser:
         if name in ("search", "show", "open", "run", "edit", "rm",
                     "done", "undone", "hide", "unhide"):
             s.add_argument("arg", nargs="?")
+        if name in ("open", "run"):
+            s.add_argument("n", nargs="?", default="1")
         if name in ("list", "search", "show"):
             s.add_argument("--all", action="store_true")
             s.add_argument("-g", action="store_true")
