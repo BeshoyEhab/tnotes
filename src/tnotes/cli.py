@@ -21,21 +21,19 @@ def compose_in_editor(entry_type: str, initial: str = "") -> str | None:
               f"# Save+quit to save, quit with empty file to discard.\n")
     tmpl = {"url": "# URL: <paste url here>\n", "cmd": "# CMD: <paste command here>\n"}.get(entry_type, "")
     fd, tmp = tempfile.mkstemp(prefix="tn-", suffix=".md")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(header + tmpl + (initial or ""))
+    if actions.edit_in_editor(tmp) != 0:
+        print(f"editor exited non-zero; draft kept at {tmp}")
+        return None
+    lines = [ln for ln in Path(tmp).read_text(encoding="utf-8").splitlines()
+             if not ln.lstrip().startswith("#")]
+    text = "\n".join(lines).strip()
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(header + tmpl + (initial or ""))
-        if actions.edit_in_editor(tmp) != 0:
-            print(f"editor exited non-zero; draft kept at {tmp}")
-            return None
-        lines = [ln for ln in Path(tmp).read_text(encoding="utf-8").splitlines()
-                 if not ln.lstrip().startswith("#")]
-        text = "\n".join(lines).strip()
-        return text or None
-    finally:
-        try:
-            Path(tmp).unlink()
-        except OSError:
-            pass
+        Path(tmp).unlink()
+    except OSError:
+        pass
+    return text or None
 
 def _resolve_scope(args) -> tuple[str, str | None]:
     if args.g:
@@ -172,27 +170,25 @@ def main(argv: list[str] | None = None) -> int:
             print(f"no entry {args.arg}", file=sys.stderr)
             return 1
         fd, tmp = tempfile.mkstemp(prefix="tn-edit-", suffix=".md")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(f"# editing {e['id']} — # lines ignored\n{e['body']}\n")
+        if actions.edit_in_editor(tmp) != 0:
+            print(f"editor exited non-zero; draft kept at {tmp}")
+            return 1
+        lines = [ln for ln in Path(tmp).read_text(encoding="utf-8").splitlines()
+                 if not ln.lstrip().startswith("#")]
+        new_body = "\n".join(lines).strip()
         try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                f.write(f"# editing {e['id']} — # lines ignored\n{e['body']}\n")
-            if actions.edit_in_editor(tmp) != 0:
-                print(f"editor exited non-zero; draft kept at {tmp}")
-                return 1
-            lines = [ln for ln in Path(tmp).read_text(encoding="utf-8").splitlines()
-                     if not ln.lstrip().startswith("#")]
-            new_body = "\n".join(lines).strip()
-            if not new_body:
-                print("discarded (empty).")
-                return 1
-            store.update_entry(e["id"], body=new_body,
-                               title=new_body.splitlines()[0][:60])
-            print(f"updated {e['id']}")
-            return 0
-        finally:
-            try:
-                Path(tmp).unlink()
-            except OSError:
-                pass
+            Path(tmp).unlink()
+        except OSError:
+            pass
+        if not new_body:
+            print("discarded (empty).")
+            return 1
+        store.update_entry(e["id"], body=new_body,
+                           title=new_body.splitlines()[0][:60])
+        print(f"updated {e['id']}")
+        return 0
     if args.sub is None and (args.url != "__unset__" or args.cmd != "__unset__"
                              or args.note is not None or args.text is not None or args.m
                              or not sys.stdin.isatty()):

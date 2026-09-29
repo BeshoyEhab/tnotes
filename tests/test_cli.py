@@ -1,7 +1,8 @@
 # tests/test_cli.py
 import os
-from tnotes.cli import main
-from tnotes import store
+from pathlib import Path
+from tnotes.cli import main, compose_in_editor
+from tnotes import actions, store
 
 def _add(capsys, *argv):
     assert main(list(argv)) == 0
@@ -30,3 +31,14 @@ def test_done_undone_hide_unhide_rm(tmp_path, monkeypatch, capsys):
     assert main(["hide", eid]) == 0 and store.get_entry(eid)["show_on_open"] is False
     assert main(["unhide", eid]) == 0 and store.get_entry(eid)["show_on_open"] is True
     assert main(["rm", eid]) == 0 and store.get_entry(eid) is None
+
+def test_editor_failure_keeps_draft(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    monkeypatch.setattr(actions, "edit_in_editor", lambda p: 1)
+    assert compose_in_editor("note", "hi") is None
+    tmp = capsys.readouterr().out.strip().split()[-1]
+    assert Path(tmp).exists()
+    e = store.add_entry(type="note", title="t", body="b", tags=[], scope="global", cwd=None, show_on_open=True)
+    assert main(["edit", e["id"]]) == 1
+    tmp = capsys.readouterr().out.strip().split()[-1]
+    assert Path(tmp).exists()
