@@ -6,6 +6,7 @@ import sys
 import textwrap
 from . import store
 from .extract import extract_actions
+from .models import Entry
 from .picker import format_row
 
 def _autoshow_scope(args) -> tuple[str, bool]:
@@ -29,29 +30,29 @@ def _entries_for(args, cwd=None):
 
 def cmd_list(args) -> int:
     for e in _entries_for(args):
-        print(f"{format_row(e)} {e['id']}")
+        print(f"{format_row(e)} {e.id}")
     return 0
 
 def cmd_search(args) -> int:
     q = (args.arg or "").lower()
     for e in _entries_for(args):
-        if q in (e.get("title", "") + "\n" + e.get("body", "")).lower():
-            print(f"{format_row(e)} {e['id']}")
+        if q in (e.title + "\n" + e.body).lower():
+            print(f"{format_row(e)} {e.id}")
     return 0
 
 ICONS = {"url": "🔗", "cmd": "$", "note": "📝"}
 
-def render_preview(entry: dict, actions: list[dict], max_lines: int = 100) -> str:
-    icon = ICONS.get(entry.get("type"), "📝")
-    tags = f" [{','.join(entry.get('tags', []))}]" if entry.get("tags") else ""
-    scope = "(G)" if entry.get("scope") == "global" else "(·)"
-    done = "✔ " if entry.get("status") == "done" else ""
-    date = (entry.get("created") or "")[:10]
-    lines = [f"{done}{icon} {entry.get('title', '')}{tags} {scope} {date}".rstrip()]
-    if entry.get("type") in ("url", "cmd"):
-        lines.append(entry.get("body", "").splitlines()[0] if entry.get("body") else "")
-    show = "yes" if entry.get("show_on_open", True) else "no"
-    lines.append(f"cwd: {entry.get('cwd') or '-'} / status: {entry.get('status')} / show: {show}")
+def render_preview(entry: Entry, actions: list[dict], max_lines: int = 100) -> str:
+    icon = ICONS.get(entry.type, "📝")
+    tags = f" [{','.join(entry.tags)}]" if entry.tags else ""
+    scope = "(G)" if entry.scope == "global" else "(·)"
+    done = "✔ " if entry.status == "done" else ""
+    date = (entry.created or "")[:10]
+    lines = [f"{done}{icon} {entry.title}{tags} {scope} {date}".rstrip()]
+    if entry.type in ("url", "cmd"):
+        lines.append(entry.body.splitlines()[0] if entry.body else "")
+    show = "yes" if entry.show_on_open else "no"
+    lines.append(f"cwd: {entry.cwd or '-'} / status: {entry.status} / show: {show}")
     lines.append("---")
     lines.append("Actions:")
     oi = ri = 0
@@ -67,7 +68,7 @@ def render_preview(entry: dict, actions: list[dict], max_lines: int = 100) -> st
     lines.append(" [c] copy  [e] edit  [enter] full view")
     lines.append("---")
     lines.append("Body (wrapped):")
-    body_lines = entry.get("body", "").splitlines() or [""]
+    body_lines = entry.body.splitlines() or [""]
     width = shutil.get_terminal_size((80, 24)).columns
     wrapped: list[str] = []
     for bl in body_lines:
@@ -79,7 +80,7 @@ def render_preview(entry: dict, actions: list[dict], max_lines: int = 100) -> st
         lines.extend(wrapped)
     return "\n".join(lines) + "\n"
 
-def render_full(entry: dict, actions: list[dict]) -> str:
+def render_full(entry: Entry, actions: list[dict]) -> str:
     return render_preview(entry, actions, max_lines=10_000).replace(
         "… (+", "FULL — no truncation (+").replace(", Enter for full)", ")")
 
@@ -135,7 +136,7 @@ def cmd_show(args) -> int:
     entries = _entries_for(args)  # show (autoshow/manual)
     if getattr(args, "startup", False):
         entries = [e for e in entries
-                   if e.get("status") == "active" and e.get("show_on_open", True)]
+                   if e.status == "active" and e.show_on_open]
         if not entries:
             return 0  # silent when empty
     for e in entries:

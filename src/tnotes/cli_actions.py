@@ -29,7 +29,7 @@ def cmd_open(args) -> int:
         return 1
     target = _nth(extract_actions(e), "open", n)
     if not target:
-        print(f"no open action #{n} on {e['id']}", file=sys.stderr)
+        print(f"no open action #{n} on {e.id}", file=sys.stderr)
         return 1
     return actions.open_target(target["target"])
 
@@ -52,7 +52,7 @@ def cmd_run(args) -> int:
         return 1
     target = _nth(extract_actions(e), "run", n)
     if not target:
-        print(f"no run action #{n} on {e['id']}", file=sys.stderr)
+        print(f"no run action #{n} on {e.id}", file=sys.stderr)
         return 1
     return actions.run_command(target["target"], confirm=True)
 
@@ -66,7 +66,7 @@ def _compose_new_note(initial: str) -> int:
     e = store.add_entry(type="note", title=body.splitlines()[0][:60], body=body,
                         tags=[], scope="local",
                         cwd=os.path.realpath(os.getcwd()), show_on_open=True)
-    print(f"saved {e['id']}")
+    print(f"saved {e.id}")
     return 0
 
 def _handle_picked(key: str | None, entry_id: str | None) -> int:
@@ -91,7 +91,7 @@ def _handle_picked(key: str | None, entry_id: str | None) -> int:
         first = next((a for a in acts if a["kind"] == "run"), None)
         return actions.run_command(first["target"], confirm=True) if first else 1
     if key == "c":
-        actions.copy_text(e["body"])
+        actions.copy_text(e.body)
         return 0
     if key == "e":
         from .cli import main as _main

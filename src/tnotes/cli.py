@@ -99,7 +99,7 @@ def cmd_add(args) -> int:
     e = store.add_entry(type=etype, title=title, body=body,
                         tags=_split_tags(args.tags), scope=scope, cwd=cwd,
                         show_on_open=not args.no_show)
-    print(f"saved {e['id']}")
+    print(f"saved {e.id}")
     return 0
 
 def build_parser() -> argparse.ArgumentParser:
@@ -181,7 +181,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         fd, tmp = tempfile.mkstemp(prefix="tn-edit-", suffix=".md")
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(f"# editing {e['id']} — # lines ignored\n{e['body']}\n")
+            f.write(f"# editing {e.id} — # lines ignored\n{e.body}\n")
         if actions.edit_in_editor(tmp) != 0:
             print(f"editor exited non-zero; draft kept at {tmp}")
             return 1
@@ -195,9 +195,9 @@ def main(argv: list[str] | None = None) -> int:
         if not new_body:
             print("discarded (empty).")
             return 1
-        store.update_entry(e["id"], body=new_body,
+        store.update_entry(e.id, body=new_body,
                            title=new_body.splitlines()[0][:60])
-        print(f"updated {e['id']}")
+        print(f"updated {e.id}")
         return 0
     if args.sub is None and (args.url != "__unset__" or args.cmd != "__unset__"
                              or args.note is not None or args.text is not None or args.m

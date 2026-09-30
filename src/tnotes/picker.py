@@ -2,22 +2,23 @@
 import os
 import shutil
 import subprocess
+from .models import Entry
 
 
 def has_fzf() -> bool:
     return shutil.which("fzf") is not None
 
 
-def format_row(entry: dict) -> str:
+def format_row(entry: Entry) -> str:
     icons = {"url": "🔗", "cmd": "$", "note": "📝"}
-    icon = icons.get(entry.get("type"), "📝")
-    tags = f" [{','.join(entry.get('tags', []))}]" if entry.get("tags") else ""
-    scope = "G" if entry.get("scope") == "global" else "·"
-    done = "✔ " if entry.get("status") == "done" else ""
-    return f"{done}{icon} {entry.get('title', '')}{tags} {scope}".rstrip()
+    icon = icons.get(entry.type, "📝")
+    tags = f" [{','.join(entry.tags)}]" if entry.tags else ""
+    scope = "G" if entry.scope == "global" else "·"
+    done = "✔ " if entry.status == "done" else ""
+    return f"{done}{icon} {entry.title}{tags} {scope}".rstrip()
 
-def build_rows(entries: list[dict]) -> list[str]:
-    return [f"{format_row(e)}\t{e['id']}" for e in entries]
+def build_rows(entries: list[Entry]) -> list[str]:
+    return [f"{format_row(e)}\t{e.id}" for e in entries]
 
 HEADER_KEYS = [("enter", "full"), ("o", "open"), ("r", "run"),
                ("c", "copy"), ("e", "edit"), ("ctrl-n", "new"), ("q", "quit")]
@@ -35,11 +36,11 @@ def fzf_argv() -> list[str]:
             "--header", header_bar(), "--header-border=rounded",
             "--print-query", f"--expect={','.join(EXPECT_KEYS)}"]
 
-def run_picker(entries: list[dict]) -> tuple[str | None, str | None]:
+def run_picker(entries: list[Entry]) -> tuple[str | None, str | None]:
     """Returns (key, entry_id). ctrl-n returns ("ctrl-n", query text)."""
     if not has_fzf():
         for e in entries:
-            print(f"{format_row(e)} {e['id']}")
+            print(f"{format_row(e)} {e.id}")
         return None, None
     proc = subprocess.run(fzf_argv(), input="\n".join(build_rows(entries)).encode(),
                           capture_output=True)

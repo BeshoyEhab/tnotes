@@ -1,6 +1,7 @@
 """Derive open/run actions. Typed entries first, then markdown-inline syntax.
 Literal !, backslash, ~ never create actions."""
 import re
+from .models import Entry
 
 _LINK_RE = re.compile(r"\[([^\]]*)\]\((https?://[^)\s]+)\)")
 _BARE_RE = re.compile(r"https?://[^\s)>\]`'\"]+")
@@ -39,8 +40,8 @@ def _extract_fenced(text: str) -> list[dict]:
                 acts.append({"kind": "run", "target": line, "label": line})
     return acts
 
-def extract_actions(entry: dict) -> list[dict]:
-    etype, body, title = entry.get("type", "note"), entry.get("body", ""), entry.get("title", "")
+def extract_actions(entry: Entry) -> list[dict]:
+    etype, body, title = entry.type, entry.body, entry.title
     if etype == "url":
         url = body.strip().splitlines()[0].strip() if body.strip() else ""
         base = [{"kind": "open", "target": url, "label": title or url}] if url else []
