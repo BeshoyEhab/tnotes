@@ -6,6 +6,8 @@ import tempfile
 from pathlib import Path
 from . import store
 from . import actions
+from . import commands
+from .models import EntryNotFound
 
 def _split_tags(s: str | None) -> list[str]:
     return [t.strip() for t in s.split(",") if t.strip()] if s else []
@@ -17,23 +19,8 @@ def _read_stdin_if_piped() -> str | None:
     return None
 
 def compose_in_editor(entry_type: str, initial: str = "") -> str | None:
-    header = (f"# tn {entry_type} — lines starting with # are ignored.\n"
-              f"# Save+quit to save, quit with empty file to discard.\n")
-    tmpl = {"url": "# URL: <paste url here>\n", "cmd": "# CMD: <paste command here>\n"}.get(entry_type, "")
-    fd, tmp = tempfile.mkstemp(prefix="tn-", suffix=".md")
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(header + tmpl + (initial or ""))
-    if actions.edit_in_editor(tmp) != 0:
-        print(f"editor exited non-zero; draft kept at {tmp}")
-        return None
-    lines = [ln for ln in Path(tmp).read_text(encoding="utf-8").splitlines()
-             if not ln.lstrip().startswith("#")]
-    text = "\n".join(lines).strip()
-    try:
-        Path(tmp).unlink()
-    except OSError:
-        pass
-    return text or None
+    from .commands import compose_text
+    return compose_text(entry_type, initial)
 
 def _resolve_scope(args) -> tuple[str, str | None]:
     if args.g:
@@ -96,7 +83,7 @@ def cmd_add(args) -> int:
     body = body.strip()
     scope, cwd = _resolve_scope(args)
     title = args.title or body.splitlines()[0][:60]
-    e = store.add_entry(type=etype, title=title, body=body,
+    e = commands.do_add(type=etype, title=title, body=body,
                         tags=_split_tags(args.tags), scope=scope, cwd=cwd,
                         show_on_open=not args.no_show)
     print(f"saved {e.id}")
@@ -151,33 +138,33 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.sub in ("done", "undone", "hide", "unhide"):
         try:
-            mapping = {"done": {"status": "done"}, "undone": {"status": "active"},
-                       "hide": {"show_on_open": False}, "unhide": {"show_on_open": True}}
-            store.update_entry(args.arg, **mapping[args.sub])
+            if args.sub == "done":
+                commands.do_set_status(args.arg, "done")
+            elif args.sub == "undone":
+                commands.do_set_status(args.arg, "active")
+            elif args.sub == "hide":
+                commands.do_set_show(args.arg, False)
+            else:
+                commands.do_set_show(args.arg, True)
             print(f"{args.sub} {args.arg}")
             return 0
-        except KeyError:
+        except EntryNotFound:
             print(f"no entry {args.arg}", file=sys.stderr)
             return 1
     if args.sub == "rm":
         try:
-            if store.delete_entry(args.arg):
-                print(f"removed {args.arg}")
-                return 0
-        except KeyError as exc:
+            commands.do_remove(args.arg)
+            print(f"removed {args.arg}")
+            return 0
+        except EntryNotFound as exc:
             print(exc, file=sys.stderr)
             return 1
-        print(f"no entry {args.arg}", file=sys.stderr)
-        return 1
     if args.sub == "edit":
         from .extract import extract_actions  # noqa: F401 (used Task 5)
         try:
-            e = store.get_entry(args.arg)
-        except KeyError as exc:
+            e = commands.resolve_entry(args.arg)
+        except EntryNotFound as exc:
             print(exc, file=sys.stderr)
-            return 1
-        if not e:
-            print(f"no entry {args.arg}", file=sys.stderr)
             return 1
         fd, tmp = tempfile.mkstemp(prefix="tn-edit-", suffix=".md")
         with os.fdopen(fd, "w", encoding="utf-8") as f:

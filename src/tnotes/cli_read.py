@@ -4,9 +4,9 @@ import shutil
 import subprocess
 import sys
 import textwrap
-from . import store
+from . import commands
 from .extract import extract_actions
-from .models import Entry
+from .models import Entry, EntryNotFound
 from .picker import format_row
 
 def _autoshow_scope(args) -> tuple[str, bool]:
@@ -22,10 +22,9 @@ def _entries_for(args, cwd=None):
         scope = "global"
     elif getattr(args, "l", False):
         scope = "local"
-    return store.visible_entries(
+    return commands.do_list(
         cwd=cwd, scope=scope,
         include_done=getattr(args, "done", False),
-        include_hidden=True,
         all_dirs=getattr(args, "all", False))
 
 def cmd_list(args) -> int:
@@ -34,10 +33,16 @@ def cmd_list(args) -> int:
     return 0
 
 def cmd_search(args) -> int:
-    q = (args.arg or "").lower()
-    for e in _entries_for(args):
-        if q in (e.title + "\n" + e.body).lower():
-            print(f"{format_row(e)} {e.id}")
+    scope = "here"
+    if getattr(args, "g", False):
+        scope = "global"
+    elif getattr(args, "l", False):
+        scope = "local"
+    for e in commands.do_search(
+            args.arg or "", scope=scope, cwd=None,
+            include_done=getattr(args, "done", False),
+            all_dirs=getattr(args, "all", False)):
+        print(f"{format_row(e)} {e.id}")
     return 0
 
 ICONS = {"url": "🔗", "cmd": "$", "note": "📝"}
@@ -121,12 +126,9 @@ def _rich_preview(text: str) -> str:
 def cmd_show(args) -> int:
     if args.arg:  # show <id> [--preview]
         try:
-            e = store.get_entry(args.arg)
-        except KeyError as exc:
+            e = commands.resolve_entry(args.arg)
+        except EntryNotFound as exc:
             print(exc, file=sys.stderr)
-            return 1
-        if not e:
-            print(f"no entry {args.arg}", file=sys.stderr)
             return 1
         if getattr(args, "preview", False):
             sys.stdout.write(_rich_preview(render_preview(e, extract_actions(e))))

@@ -1,60 +1,43 @@
 """Picker entry + open/run/copy/edit key handling."""
 import os
 import sys
-from . import store, actions
+from . import actions, commands
 from .extract import extract_actions
 from . import picker as P
+from .models import EntryNotFound, NoActionError
 from .cli_read import render_full, _page, _entries_for
-
-def _nth(actions_list: list[dict], kind: str, n: int) -> dict | None:
-    items = [a for a in actions_list if a["kind"] == kind]
-    return items[n - 1] if 1 <= n <= len(items) else None
 
 def cmd_open(args) -> int:
     try:
-        e = store.get_entry(args.arg)
-    except KeyError as exc:
-        print(exc, file=sys.stderr)
-        return 1
-    if not e:
-        print(f"no entry {args.arg}", file=sys.stderr)
-        return 1
-    try:
         n = int(getattr(args, "n", 1) or 1)
     except (ValueError, TypeError):
         print(f"invalid index {getattr(args, 'n', None)!r}", file=sys.stderr)
         return 1
-    if n < 1:
-        print(f"invalid index {n}", file=sys.stderr)
+    try:
+        e, target = commands.do_open(args.arg, n)
+    except EntryNotFound as exc:
+        print(exc, file=sys.stderr)
         return 1
-    target = _nth(extract_actions(e), "open", n)
-    if not target:
-        print(f"no open action #{n} on {e.id}", file=sys.stderr)
+    except NoActionError as exc:
+        print(exc, file=sys.stderr)
         return 1
-    return actions.open_target(target["target"])
+    return actions.open_target(target)
 
 def cmd_run(args) -> int:
     try:
-        e = store.get_entry(args.arg)
-    except KeyError as exc:
-        print(exc, file=sys.stderr)
-        return 1
-    if not e:
-        print(f"no entry {args.arg}", file=sys.stderr)
-        return 1
-    try:
         n = int(getattr(args, "n", 1) or 1)
     except (ValueError, TypeError):
         print(f"invalid index {getattr(args, 'n', None)!r}", file=sys.stderr)
         return 1
-    if n < 1:
-        print(f"invalid index {n}", file=sys.stderr)
+    try:
+        e, target = commands.do_run(args.arg, n)
+    except EntryNotFound as exc:
+        print(exc, file=sys.stderr)
         return 1
-    target = _nth(extract_actions(e), "run", n)
-    if not target:
-        print(f"no run action #{n} on {e.id}", file=sys.stderr)
+    except NoActionError as exc:
+        print(exc, file=sys.stderr)
         return 1
-    return actions.run_command(target["target"], confirm=True)
+    return actions.run_command(target, confirm=True)
 
 def _compose_new_note(initial: str) -> int:
     from .cli import compose_in_editor
@@ -63,7 +46,7 @@ def _compose_new_note(initial: str) -> int:
         print("discarded (empty).")
         return 1
     body = text.strip()
-    e = store.add_entry(type="note", title=body.splitlines()[0][:60], body=body,
+    e = commands.do_add(type="note", title=body.splitlines()[0][:60], body=body,
                         tags=[], scope="local",
                         cwd=os.path.realpath(os.getcwd()), show_on_open=True)
     print(f"saved {e.id}")
@@ -75,10 +58,8 @@ def _handle_picked(key: str | None, entry_id: str | None) -> int:
     if not entry_id:
         return 0 if key is None else 1
     try:
-        e = store.get_entry(entry_id)
-    except KeyError:
-        return 1
-    if not e:
+        e = commands.resolve_entry(entry_id)
+    except EntryNotFound:
         return 1
     acts = extract_actions(e)
     if key in (None, "", "enter"):
