@@ -88,5 +88,18 @@ def dispatch(args) -> int:
     entries = _entries_for(args, cwd=None)
     if not entries:
         return _compose_new_note("")  # nothing to pick: straight to editor
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        try:
+            from .tui import TnotesApp
+        except ImportError:
+            pass
+        else:
+            app = TnotesApp(
+                scope="global" if getattr(args, "g", False) else
+                      "local" if getattr(args, "l", False) else "here",
+                all_dirs=getattr(args, "all", False),
+                include_done=getattr(args, "done", False))
+            app.run()
+            return 0
     key, eid = P.run_picker(entries)
     return _handle_picked(key, eid)
