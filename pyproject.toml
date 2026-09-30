@@ -3,7 +3,10 @@ name = "tnotes"
 version = "0.1.0"
 description = "Terminal notepad with actions (tn)"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["textual>=0.86"]
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
 
 [project.scripts]
 tn = "tnotes.cli:main"
@@ -17,3 +20,4 @@ packages = ["src/tnotes"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
