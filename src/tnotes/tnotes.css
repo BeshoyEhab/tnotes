@@ -2,6 +2,7 @@
 #entries { width: 1fr; }
 #preview { width: 2fr; }
 #keybar { height: 1; background: $surface; color: $text-muted; }
+#editor { height: 1fr; border: tall $primary; }
 TnotesApp.compact #body { layout: vertical; }
 TnotesApp.compact #entries { height: 1fr; }
 TnotesApp.compact #preview { height: 2fr; }

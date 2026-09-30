@@ -50,6 +50,11 @@ def do_set_status(entry_id: str, status: str) -> Entry:
 def do_set_show(entry_id: str, show: bool) -> Entry:
     return store.update_entry(resolve_entry(entry_id).id, show_on_open=show)
 
+def do_set_body(entry_id: str, body: str) -> Entry:
+    e = resolve_entry(entry_id)
+    return store.update_entry(e.id, body=body,
+                              title=body.splitlines()[0][:60])
+
 def do_remove(entry_id: str) -> bool:
     return store.delete_entry(resolve_entry(entry_id).id)
 

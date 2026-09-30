@@ -11,6 +11,7 @@ Required:
 |---|---|
 | Python | ≥ 3.12 (`requires-python = ">=3.12"`, zero third-party deps) |
 | `fzf` binary | picker UI; without it `tn` falls back to `tn list` |
+| `textual` | persistent TUI (`tn tui`); falls back to `fzf` picker without it |
 | `uv` **or** `pip` | install only (`pip install -e .` needs network for the `hatchling` build backend) |
 | `~/.local/bin` on your `PATH` | for the `tn` shim |
 
@@ -62,3 +63,22 @@ tn show ID [--preview]  tn open ID [n]  tn run ID [n]
 tn edit ID | tn rm ID | tn done ID | tn undone ID | tn hide ID | tn unhide ID | tn path
 
 Env: TNOTES_DIR, EDITOR/VISUAL, BROWSER, PAGER, NOTE_AUTOSHOW_GLOBAL=1.
+
+## TUI keys
+
+`tn tui` opens the persistent browser (mouse click/wheel work; narrow
+windows stack panes via the compact layout).
+
+| Key | Action |
+|---|---|
+| `j` / `k` | navigate entries |
+| `/` | focus filter |
+| `o` | open first link, or pick from submenu when several |
+| `r` | run first command (with confirm), or pick from submenu |
+| `c` | copy body to clipboard |
+| `e` | in-place edit (`ctrl-s` save, `esc` cancel) |
+| `E` | external `$EDITOR` round-trip |
+| `d` | toggle done/active |
+| `h` | toggle hide/show-on-open |
+| `n` | new note dialog (`ctrl-s` save, `esc` cancel) |
+| `q` | quit |

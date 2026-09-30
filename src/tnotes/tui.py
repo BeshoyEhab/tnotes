@@ -1,12 +1,80 @@
 """Persistent textual TUI. Browse shell in this task; actions in the next."""
 from textual import events
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal
+from textual.containers import Horizontal, Vertical
 from textual.message import Message
-from textual.widgets import Input, Label, ListItem, ListView, Markdown, Static
-from . import commands
+from textual.screen import ModalScreen
+from textual.widgets import Input, Label, ListItem, ListView, Markdown, Static, TextArea
+from rich.text import Text
+from . import actions, commands
+from .extract import extract_actions
 from .models import Entry
 from .picker import format_row
+
+
+def selection_actions(entry: Entry | None) -> dict:
+    if entry is None:
+        return {"opens": [], "runs": []}
+    acts = extract_actions(entry)
+    return {"opens": [a["target"] for a in acts if a["kind"] == "open"],
+            "runs": [a["target"] for a in acts if a["kind"] == "run"]}
+
+
+class ActionMenuScreen(ModalScreen):
+    BINDINGS = [("escape", "dismiss", "close"),
+                ("j", "cursor_down", "down"),
+                ("k", "cursor_up", "up")]
+
+    def __init__(self, title: str, items: list[str]) -> None:
+        super().__init__()
+        self._title = title
+        self._items = items
+
+    def compose(self) -> ComposeResult:
+        yield Label(self._title)
+        yield ListView(*[ListItem(Label(t)) for t in self._items], id="menu")
+
+    def on_mount(self) -> None:
+        self.query_one("#menu", ListView).focus()
+
+    def action_cursor_down(self) -> None:
+        self.query_one("#menu", ListView).action_cursor_down()
+
+    def action_cursor_up(self) -> None:
+        self.query_one("#menu", ListView).action_cursor_up()
+
+    async def on_list_view_selected(self, event: ListView.Selected) -> None:
+        self.dismiss(event.list_view.index)
+
+
+class ConfirmScreen(ModalScreen):
+    BINDINGS = [("y", "confirm", "yes"), ("n", "dismiss", "no"),
+                ("escape", "dismiss", "no")]
+
+    def __init__(self, cmd: str) -> None:
+        super().__init__()
+        self._cmd = cmd
+
+    def compose(self) -> ComposeResult:
+        yield Label(f"run? [y/N]\n{self._cmd}")
+
+    def action_confirm(self) -> None:
+        self.dismiss(True)
+
+
+class NewNoteScreen(ModalScreen):
+    BINDINGS = [("escape", "dismiss", "cancel"), ("ctrl+s", "save", "save")]
+
+    def compose(self) -> ComposeResult:
+        yield Label("new note (ctrl-s save, esc cancel)")
+        yield Input(placeholder="title (optional)", id="nt-title")
+        yield TextArea(id="nt-body")
+
+    def action_save(self) -> None:
+        title = self.query_one("#nt-title", Input).value
+        body = self.query_one("#nt-body", TextArea).text
+        self.dismiss((title, body))
+
 
 class EntrySelected(Message):
     def __init__(self, entry: Entry | None) -> None:
@@ -16,7 +84,11 @@ class EntrySelected(Message):
 class TnotesApp(App):
     CSS_PATH = "tnotes.css"
     BINDINGS = [("q", "quit", "quit"), ("/", "focus_filter", "filter"),
-                ("j", "move_down", "down"), ("k", "move_up", "up")]
+                ("j", "move_down", "down"), ("k", "move_up", "up"),
+                ("o", "open_link", "open"), ("r", "run_cmd", "run"),
+                ("c", "copy_body", "copy"), ("d", "toggle_done", "done"),
+                ("h", "toggle_hide", "hide"), ("n", "new_note", "new"),
+                ("e", "edit_here", "edit"), ("E", "edit_external", "editor")]
 
     def __init__(self, scope: str = "here", all_dirs: bool = False,
                  include_done: bool = False) -> None:
@@ -30,6 +102,8 @@ class TnotesApp(App):
         self.current_entry: Entry | None = None
         self.preview_source: str = ""
         self.keybar_plain: str = ""
+        self._editing: Entry | None = None
+        self._editor: TextArea | None = None
 
     @property
     def visible(self) -> list[Entry]:
@@ -127,6 +201,8 @@ class TnotesApp(App):
             lv.index = idx
 
     async def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
+        if event.list_view.id != "entries":
+            return
         idx = event.list_view.index
         if idx is not None and 0 <= idx < len(self.visible):
             self.select_entry(self.visible[idx])
@@ -148,10 +224,160 @@ class TnotesApp(App):
         return "\n\n".join(p for p in [head, meta, tags, entry.body] if p)
 
     def update_keybar(self) -> None:
-        # Task 5 makes this dynamic via selection_actions; static superset now.
-        plain = "j/k navigate · / filter · n new · q quit"
-        self.keybar_plain = plain
-        self.query_one("#keybar", Static).update(plain)
+        acts = selection_actions(self.current_entry)
+        parts = [("j/k", "navigate"), ("/", "filter")]
+        if acts["opens"]:
+            parts.append(("o", f"open×{len(acts['opens'])}"))
+        if acts["runs"]:
+            parts.append(("r", f"run×{len(acts['runs'])}"))
+        parts += [("c", "copy"), ("e", "edit"), ("d", "done"),
+                  ("h", "hide"), ("n", "new"), ("q", "quit")]
+        self.keybar_plain = " · ".join(f"{k} {v}" for k, v in parts)
+        text = Text()
+        for i, (k, v) in enumerate(parts):
+            if i:
+                text.append(" · ", style="dim")
+            text.append(k, style="bold cyan")
+            text.append(f" {v}", style="dim")
+        self.query_one("#keybar", Static).update(text)
+
+    def check_action(self, action: str, parameters) -> bool | None:
+        if self.current_entry is None and action in (
+                "open_link", "run_cmd", "copy_body", "edit_here",
+                "toggle_done", "toggle_hide"):
+            return False
+        acts = selection_actions(self.current_entry)
+        if action == "open_link" and not acts["opens"]:
+            return False
+        if action == "run_cmd" and not acts["runs"]:
+            return False
+        return True
+
+    def _primary(self) -> tuple[str, str] | None:
+        acts = selection_actions(self.current_entry)
+        if acts["opens"]:
+            return ("open", acts["opens"][0])
+        if acts["runs"]:
+            return ("run", acts["runs"][0])
+        return None
+
+    def action_open_link(self) -> None:
+        acts = selection_actions(self.current_entry)["opens"]
+        if len(acts) == 1:
+            self._run_open(acts[0])
+        elif acts:
+            self.push_screen(ActionMenuScreen("open…", acts), self._menu_opened)
+
+    def _menu_opened(self, idx: int | None) -> None:
+        if idx is None:
+            return
+        self._run_open(selection_actions(self.current_entry)["opens"][idx])
+
+    def _run_open(self, url: str) -> None:
+        self.run_worker(lambda: actions.open_target(url), thread=True,
+                        description=f"open {url}")
+        self.notify(f"opening {url}")
+
+    def action_run_cmd(self) -> None:
+        acts = selection_actions(self.current_entry)["runs"]
+        if len(acts) == 1:
+            self._confirm_run(acts[0])
+        elif acts:
+            self.push_screen(ActionMenuScreen("run…", acts), self._menu_run)
+
+    def _menu_run(self, idx: int | None) -> None:
+        if idx is None:
+            return
+        self._confirm_run(selection_actions(self.current_entry)["runs"][idx])
+
+    def _confirm_run(self, cmd: str) -> None:
+        self.push_screen(ConfirmScreen(cmd), lambda yes: yes and self._run_cmd(cmd))
+
+    def _run_cmd(self, cmd: str) -> None:
+        def go():
+            rc = actions.run_command(cmd, confirm=False)
+            self.call_from_thread(self.notify, f"exit: {rc}")
+        self.run_worker(go, thread=True, description=f"run {cmd}")
+
+    def action_copy_body(self) -> None:
+        if self.current_entry:
+            body = self.current_entry.body
+            self.run_worker(lambda: actions.copy_text(body), thread=True)
+            self.notify("copied")
+
+    def action_toggle_done(self) -> None:
+        if self.current_entry:
+            e = self.current_entry
+            updated = commands.do_set_status(e.id, "done" if e.status == "active" else "active")
+            self.refresh_entries()
+            if updated.id not in {x.id for x in self.visible}:
+                self.select_entry(updated)
+
+    def action_toggle_hide(self) -> None:
+        if self.current_entry:
+            e = self.current_entry
+            commands.do_set_show(e.id, not e.show_on_open)
+            self.refresh_entries()
+
+    def action_edit_here(self) -> None:
+        if not self.current_entry:
+            return
+        self._editing = self.current_entry
+        preview = self.query_one("#preview")
+        self._editor = TextArea(self.current_entry.body, id="editor")
+        self.query_one("#body", Horizontal).mount(self._editor, after=preview)
+        preview.display = False
+        self._editor.focus()
+
+    async def on_key(self, event: events.Key) -> None:
+        if getattr(self, "_editor", None) is not None and self._editor.has_focus:
+            if event.key == "ctrl+s":
+                event.prevent_default()
+                self._save_edit()
+            elif event.key == "escape":
+                event.prevent_default()
+                self._cancel_edit()
+
+    def _save_edit(self) -> None:
+        body = self._editor.text.strip()
+        if body:
+            commands.do_set_body(self._editing.id, body)
+        self._close_editor()
+
+    def _cancel_edit(self) -> None:
+        self._close_editor()
+
+    def _close_editor(self) -> None:
+        self.query_one("#preview").display = True
+        self._editor.remove()
+        self._editor = None
+        self.refresh_entries()
+
+    def action_new_note(self) -> None:
+        self.push_screen(NewNoteScreen(), self._new_saved)
+
+    def _new_saved(self, data: tuple[str, str] | None) -> None:
+        if not data:
+            return
+        title, body = data
+        if not body.strip():
+            self.notify("discarded (empty)", severity="warning")
+            return
+        import os
+        commands.do_add(type="note", title=title or body.splitlines()[0][:60],
+                        body=body.strip(), tags=[], scope="local",
+                        cwd=os.path.realpath(os.getcwd()), show_on_open=True)
+        self.refresh_entries(keep_selection=False)
+
+    def action_edit_external(self) -> None:
+        if not self.current_entry:
+            return
+        entry = self.current_entry
+        with self.suspend():
+            text = commands.compose_text(entry.type, initial=entry.body)
+        if text and text.strip() and text.strip() != entry.body:
+            commands.do_set_body(entry.id, text.strip())
+        self.refresh_entries()
 
     def on_resize(self, event: events.Resize) -> None:
         self.set_class(event.size.width < 90, "compact")
@@ -164,7 +390,11 @@ class TnotesApp(App):
         self.query_one("#filter", Input).focus()
 
     def action_move_down(self) -> None:
+        if isinstance(self.screen, ModalScreen):
+            return
         self.query_one("#entries", ListView).action_cursor_down()
 
     def action_move_up(self) -> None:
+        if isinstance(self.screen, ModalScreen):
+            return
         self.query_one("#entries", ListView).action_cursor_up()
