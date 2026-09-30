@@ -1,6 +1,7 @@
 """Persistent textual TUI. Browse shell in this task; actions in the next."""
 from textual import events
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.screen import ModalScreen
@@ -88,7 +89,12 @@ class TnotesApp(App):
                 ("o", "open_link", "open"), ("r", "run_cmd", "run"),
                 ("c", "copy_body", "copy"), ("d", "toggle_done", "done"),
                 ("h", "toggle_hide", "hide"), ("n", "new_note", "new"),
-                ("e", "edit_here", "edit"), ("E", "edit_external", "editor")]
+                ("e", "edit_here", "edit"), ("E", "edit_external", "editor"),
+                # priority: ListView binds enter to select_cursor; without
+                # priority the app-level primary would never fire when the
+                # entries list has focus. check_action disables primary on
+                # modal screens so submenu/confirm enter still works.
+                Binding("enter", "primary", "act", priority=True)]
 
     def __init__(self, scope: str = "here", all_dirs: bool = False,
                  include_done: bool = False) -> None:
@@ -242,6 +248,8 @@ class TnotesApp(App):
         self.query_one("#keybar", Static).update(text)
 
     def check_action(self, action: str, parameters) -> bool | None:
+        if action == "primary" and isinstance(self.screen, ModalScreen):
+            return False
         if self.current_entry is None and action in (
                 "open_link", "run_cmd", "copy_body", "edit_here",
                 "toggle_done", "toggle_hide"):
@@ -269,9 +277,10 @@ class TnotesApp(App):
             self.push_screen(ActionMenuScreen("open…", acts), self._menu_opened)
 
     def _menu_opened(self, idx: int | None) -> None:
-        if idx is None:
+        acts = selection_actions(self.current_entry)["opens"]
+        if idx is None or not 0 <= idx < len(acts):
             return
-        self._run_open(selection_actions(self.current_entry)["opens"][idx])
+        self._run_open(acts[idx])
 
     def _run_open(self, url: str) -> None:
         self.run_worker(lambda: actions.open_target(url), thread=True,
@@ -286,12 +295,41 @@ class TnotesApp(App):
             self.push_screen(ActionMenuScreen("run…", acts), self._menu_run)
 
     def _menu_run(self, idx: int | None) -> None:
-        if idx is None:
+        acts = selection_actions(self.current_entry)["runs"]
+        if idx is None or not 0 <= idx < len(acts):
             return
-        self._confirm_run(selection_actions(self.current_entry)["runs"][idx])
+        self._confirm_run(acts[idx])
 
     def _confirm_run(self, cmd: str) -> None:
         self.push_screen(ConfirmScreen(cmd), lambda yes: yes and self._run_cmd(cmd))
+
+    def action_primary(self) -> None:
+        if isinstance(self.screen, ModalScreen):
+            return
+        acts = selection_actions(self.current_entry)
+        opens = acts["opens"]
+        runs = acts["runs"]
+        total = len(opens) + len(runs)
+        if total > 1:
+            items = [f"open {u}" for u in opens] + [f"run {c}" for c in runs]
+            self.push_screen(ActionMenuScreen("act…", items), self._menu_primary)
+        elif total == 1:
+            if opens:
+                self._run_open(opens[0])
+            else:
+                self._confirm_run(runs[0])
+
+    def _menu_primary(self, idx: int | None) -> None:
+        acts = selection_actions(self.current_entry)
+        items = ([f"open {u}" for u in acts["opens"]]
+                 + [f"run {c}" for c in acts["runs"]])
+        if idx is None or not 0 <= idx < len(items):
+            return
+        label = items[idx]
+        if label.startswith("open "):
+            self._run_open(label[len("open "):])
+        elif label.startswith("run "):
+            self._confirm_run(label[len("run "):])
 
     def _run_cmd(self, cmd: str) -> None:
         def go():

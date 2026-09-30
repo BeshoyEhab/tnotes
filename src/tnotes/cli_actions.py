@@ -80,6 +80,8 @@ def _handle_picked(key: str | None, entry_id: str | None) -> int:
     return 0  # q/quit
 
 def dispatch(args) -> int:
+    if args.sub == "tui":
+        args.sub = None
     if args.sub == "open":
         return cmd_open(args)
     if args.sub == "run":

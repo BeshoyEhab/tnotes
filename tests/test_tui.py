@@ -84,3 +84,56 @@ async def test_done_toggle_refreshes(tmp_path, monkeypatch):
         await pilot.press("d")
         await pilot.pause()
         assert app.current_entry.status == "done"
+
+async def test_enter_single_open_performs_directly(tmp_path, monkeypatch):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    store.add_entry(type="note", title="one", body="see https://a.example",
+                    tags=[], scope="global", cwd=None, show_on_open=True)
+    import tnotes.tui as T
+    calls = {}
+    monkeypatch.setattr(T.TnotesApp, "_run_open",
+                        lambda self, url: calls.update(open=url))
+    monkeypatch.setattr(T.TnotesApp, "_confirm_run",
+                        lambda self, cmd: calls.update(run=cmd))
+    from tnotes.tui import TnotesApp
+    app = TnotesApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert calls.get("open") == "https://a.example"
+        assert len(app.screen_stack) == 1
+
+async def test_enter_multi_opens_submenu(tmp_path, monkeypatch):
+    await _two(tmp_path, monkeypatch)
+    import tnotes.tui as T
+    monkeypatch.setattr(T.TnotesApp, "_run_open", lambda self, url: None)
+    monkeypatch.setattr(T.TnotesApp, "_confirm_run", lambda self, cmd: None)
+    from tnotes.tui import TnotesApp, ActionMenuScreen
+    app = TnotesApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app.current_entry.title == "links"
+        await pilot.press("enter")
+        await pilot.pause()
+        assert len(app.screen_stack) == 2
+        assert isinstance(app.screen_stack[-1], ActionMenuScreen)
+
+async def test_enter_plain_noop(tmp_path, monkeypatch):
+    await _two(tmp_path, monkeypatch)
+    import tnotes.tui as T
+    calls = {}
+    monkeypatch.setattr(T.TnotesApp, "_run_open",
+                        lambda self, url: calls.update(open=url))
+    monkeypatch.setattr(T.TnotesApp, "_confirm_run",
+                        lambda self, cmd: calls.update(run=cmd))
+    from tnotes.tui import TnotesApp
+    app = TnotesApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("j")  # select "plain"
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert calls == {}
+        assert len(app.screen_stack) == 1

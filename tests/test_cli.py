@@ -137,3 +137,16 @@ def test_preview_plain_without_mdcat(tmp_path, monkeypatch, capsys):
     assert main(["show", e.id, "--preview"]) == 0
     out = capsys.readouterr().out
     assert "hello" in out and "PRETTY:" not in out
+
+def test_tui_subcommand_routes_to_picker(tmp_path, monkeypatch, capsys):
+    import tnotes.picker as P
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    store.add_entry(type="note", title="x", body="b", tags=[],
+                    scope="global", cwd=None, show_on_open=True)
+    monkeypatch.setattr(P, "run_picker", lambda entries: (None, None))
+    assert main(["tui"]) == 0
+    assert len(store.load_all()) == 1
+    assert all(e.title != "tui" for e in store.load_all())
+    assert main(["tui", "--all"]) == 0
+    assert len(store.load_all()) == 1

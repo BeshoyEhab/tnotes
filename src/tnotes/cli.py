@@ -31,7 +31,7 @@ def _resolve_scope(args) -> tuple[str, str | None]:
 # subparsers — `tn <text>` and `tn done <id>` both misparsed (invalid choice).
 # So the quick-add positional is extracted here; build_parser has no `text`.
 _SUB_COMMANDS = {"list", "search", "show", "open", "run", "edit", "rm",
-                 "done", "undone", "hide", "unhide", "path"}
+                 "done", "undone", "hide", "unhide", "path", "tui"}
 _VALUE_OPTIONS = {"--url", "--cmd", "--note", "--title", "--tags"}
 
 def _extract_text(argv: list[str]) -> tuple[str | None, list[str]]:
@@ -107,14 +107,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--preview", action="store_true")
     sub = p.add_subparsers(dest="sub")
     for name in ["list", "search", "show", "open", "run", "edit", "rm",
-                 "done", "undone", "hide", "unhide", "path"]:
+                 "done", "undone", "hide", "unhide", "path", "tui"]:
         s = sub.add_parser(name)
         if name in ("search", "show", "open", "run", "edit", "rm",
                     "done", "undone", "hide", "unhide"):
             s.add_argument("arg", nargs="?")
         if name in ("open", "run"):
             s.add_argument("n", nargs="?", default="1")
-        if name in ("list", "search", "show"):
+        if name in ("list", "search", "show", "tui"):
             s.add_argument("--all", action="store_true")
             s.add_argument("-g", action="store_true")
             s.add_argument("-l", action="store_true")
