@@ -5,8 +5,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.screen import ModalScreen
-from textual.widgets import Input, Label, ListItem, ListView, Markdown, Static, TextArea
-from rich.text import Text
+from textual.widgets import Button, Input, Label, ListItem, ListView, Markdown, Static, TextArea
 from . import actions, commands
 from .extract import extract_actions
 from .models import Entry
@@ -103,7 +102,7 @@ class TnotesApp(App):
         self.all_dirs = all_dirs
         self.include_done = include_done
         self.entries: list[Entry] = []
-        self.visible: list[Entry] = []
+        self.shown: list[Entry] = []
         self.query: str = ""
         self.current_entry: Entry | None = None
         self.preview_source: str = ""
@@ -111,29 +110,21 @@ class TnotesApp(App):
         self._editing: Entry | None = None
         self._editor: TextArea | None = None
 
-    @property
-    def visible(self) -> list[Entry]:
-        """Filtered entries for the list pane.
-
-        Shadows DOMNode.visible (a bool widget-visibility flag): the TUI
-        never toggles app-level visibility, so this seam owns the name.
-        """
-        return self.__dict__.get("_visible_entries", [])
-
-    @visible.setter
-    def visible(self, value: list[Entry] | bool) -> None:
-        if isinstance(value, bool):
-            # Framework-style visibility set; keep base-class behavior.
-            self.styles.visibility = "visible" if value else "hidden"
-        else:
-            self.__dict__["_visible_entries"] = value
-
     def compose(self) -> ComposeResult:
         yield Input(placeholder="filter…", id="filter")
         with Horizontal(id="body"):
             yield ListView(id="entries")
             yield Markdown(id="preview")
-        yield Static(id="keybar")
+        with Horizontal(id="keybar"):
+            yield Button("/ filter", id="kb-filter", compact=True)
+            yield Button("o open", id="kb-open", compact=True)
+            yield Button("r run", id="kb-run", compact=True)
+            yield Button("c copy", id="kb-copy", compact=True)
+            yield Button("e edit", id="kb-edit", compact=True)
+            yield Button("d done", id="kb-done", compact=True)
+            yield Button("h hide", id="kb-hide", compact=True)
+            yield Button("n new", id="kb-new", compact=True)
+            yield Button("q quit", id="kb-quit", compact=True)
 
     async def on_mount(self) -> None:
         self.refresh_entries()
@@ -147,21 +138,21 @@ class TnotesApp(App):
                                         all_dirs=self.all_dirs)
         self.apply_filter()
         if keep:
-            same = [e for e in self.visible if e.id == keep]
-            self.select_entry(same[0] if same else (self.visible[0] if self.visible else None))
+            same = [e for e in self.shown if e.id == keep]
+            self.select_entry(same[0] if same else (self.shown[0] if self.shown else None))
         else:
-            self.select_entry(self.visible[0] if self.visible else None)
+            self.select_entry(self.shown[0] if self.shown else None)
 
     def apply_filter(self) -> None:
         q = self.query.lower()
-        self.visible = [e for e in self.entries
+        self.shown = [e for e in self.entries
                         if not q or q in (e.title + "\n" + e.body).lower()]
         self._rebuild_rows()
-        if self.current_entry and self.current_entry.id not in {e.id for e in self.visible}:
-            self.select_entry(self.visible[0] if self.visible else None)
+        if self.current_entry and self.current_entry.id not in {e.id for e in self.shown}:
+            self.select_entry(self.shown[0] if self.shown else None)
 
     def _rebuild_rows(self) -> None:
-        """Sync ListView rows with self.visible.
+        """Sync ListView rows with self.shown.
 
         Row removal/mounting is async; run it in an exclusive worker so
         rapid filter keystrokes cannot interleave a clear with a stale
@@ -173,7 +164,7 @@ class TnotesApp(App):
         except Exception:
             return
         rows = [ListItem(Label(format_row(e)), id=f"row-{e.id}")
-                for e in self.visible]
+                for e in self.shown]
 
         async def _do() -> None:
             await lv.clear()
@@ -201,7 +192,7 @@ class TnotesApp(App):
             return
         if self.current_entry is None:
             return
-        idx = next((i for i, e in enumerate(self.visible)
+        idx = next((i for i, e in enumerate(self.shown)
                     if e.id == self.current_entry.id), None)
         if idx is not None and idx < len(lv):
             lv.index = idx
@@ -210,8 +201,8 @@ class TnotesApp(App):
         if event.list_view.id != "entries":
             return
         idx = event.list_view.index
-        if idx is not None and 0 <= idx < len(self.visible):
-            self.select_entry(self.visible[idx])
+        if idx is not None and 0 <= idx < len(self.shown):
+            self.select_entry(self.shown[idx])
 
     async def on_entry_selected(self, message: EntrySelected) -> None:
         src = self.preview_markdown(message.entry)
@@ -229,6 +220,11 @@ class TnotesApp(App):
         tags = f"🏷️ {', '.join(entry.tags)}" if entry.tags else ""
         return "\n\n".join(p for p in [head, meta, tags, entry.body] if p)
 
+    _KB_ACTIONS = {"kb-filter": "focus_filter", "kb-open": "open_link",
+                   "kb-run": "run_cmd", "kb-copy": "copy_body",
+                   "kb-edit": "edit_here", "kb-done": "toggle_done",
+                   "kb-hide": "toggle_hide", "kb-new": "new_note"}
+
     def update_keybar(self) -> None:
         acts = selection_actions(self.current_entry)
         parts = [("j/k", "navigate"), ("/", "filter")]
@@ -239,13 +235,37 @@ class TnotesApp(App):
         parts += [("c", "copy"), ("e", "edit"), ("d", "done"),
                   ("h", "hide"), ("n", "new"), ("q", "quit")]
         self.keybar_plain = " · ".join(f"{k} {v}" for k, v in parts)
-        text = Text()
-        for i, (k, v) in enumerate(parts):
-            if i:
-                text.append(" · ", style="dim")
-            text.append(k, style="bold cyan")
-            text.append(f" {v}", style="dim")
-        self.query_one("#keybar", Static).update(text)
+        try:
+            bar = self.query_one("#keybar", Horizontal)
+        except Exception:
+            return  # pre-mount (tests poking logic without compose)
+        bar.query_one("#kb-open", Button).display = bool(acts["opens"])
+        bar.query_one("#kb-run", Button).display = bool(acts["runs"])
+        if acts["opens"]:
+            bar.query_one("#kb-open", Button).label = f"o open×{len(acts['opens'])}"
+        if acts["runs"]:
+            bar.query_one("#kb-run", Button).label = f"r run×{len(acts['runs'])}"
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        action = self._KB_ACTIONS.get(event.button.id or "")
+        if action == "focus_filter":
+            self.action_focus_filter()
+        elif action == "open_link":
+            self.action_open_link()
+        elif action == "run_cmd":
+            self.action_run_cmd()
+        elif action == "copy_body":
+            self.action_copy_body()
+        elif action == "edit_here":
+            self.action_edit_here()
+        elif action == "toggle_done":
+            self.action_toggle_done()
+        elif action == "toggle_hide":
+            self.action_toggle_hide()
+        elif action == "new_note":
+            self.action_new_note()
+        elif event.button.id == "kb-quit":
+            self.exit()
 
     def check_action(self, action: str, parameters) -> bool | None:
         if action == "primary" and isinstance(self.screen, ModalScreen):
@@ -348,7 +368,7 @@ class TnotesApp(App):
             e = self.current_entry
             updated = commands.do_set_status(e.id, "done" if e.status == "active" else "active")
             self.refresh_entries()
-            if updated.id not in {x.id for x in self.visible}:
+            if updated.id not in {x.id for x in self.shown}:
                 self.select_entry(updated)
 
     def action_toggle_hide(self) -> None:

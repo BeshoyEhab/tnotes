@@ -1,7 +1,9 @@
 #body { height: 1fr; }
 #entries { width: 1fr; }
 #preview { width: 2fr; }
-#keybar { height: 1; background: $surface; color: $text-muted; }
+#keybar { height: 1; background: $surface; color: $text-muted; overflow-x: auto; }
+#keybar Button { height: 1; width: auto; min-width: 1; padding: 0 1; margin: 0; border: none; background: $surface; color: $text; }
+#keybar Button:hover { background: $primary; color: $text; }
 #editor { height: 1fr; border: tall $primary; }
 TnotesApp.compact #body { layout: vertical; }
 TnotesApp.compact #entries { height: 1fr; }

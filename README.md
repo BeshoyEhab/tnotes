@@ -68,7 +68,9 @@ Env: TNOTES_DIR, EDITOR/VISUAL, BROWSER, PAGER, NOTE_AUTOSHOW_GLOBAL=1.
 ## TUI keys
 
 `tn tui` opens the persistent browser (mouse click/wheel work; narrow
-windows stack panes via the compact layout).
+windows stack panes via the compact layout). Every keybar action is also a
+clickable button; clicking a row selects it, clicking a dialog field focuses
+it. Mouse needs terminal support — inside tmux set `set -g mouse on`.
 
 | Key | Action |
 |---|---|
