@@ -17,7 +17,7 @@
 - `Entry` fields (exact): `id type title body tags scope cwd status show_on_open created updated`; `id` 6-char lowercase hex; `scope ∈ {global,local}`; `status ∈ {active,done}`; `cwd` resolved absolute path for local, null for global.
 - Non-interactive CLI behavior byte-identical (all existing pytest tests keep passing, updated only for Entry attribute access where they touch entries).
 - Bare `tn` launches the TUI only when stdin AND stdout are ttys; pipes/non-tty/missing-textual keep fzf → list fallback.
-- TDD every task; `pytest` green before each commit; frequent commits; never touch `~/.local/bin/note` or old fish files.
+- TDD every task; `pytest` green before each commit; frequent commits.
 
 ---
 

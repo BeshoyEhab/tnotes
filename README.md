@@ -9,7 +9,7 @@ Required:
 
 | Need | Version / note |
 |---|---|
-| Python | ≥ 3.12 (`requires-python = ">=3.12"`, zero third-party deps) |
+| Python | ≥ 3.12 (`requires-python = ">=3.12"`, stdlib only except `textual` for the TUI) |
 | `fzf` binary | picker UI; without it `tn` falls back to `tn list` |
 | `textual` | persistent TUI (`tn tui`); falls back to `fzf` picker without it |
 | `uv` **or** `pip` | install only (`pip install -e .` needs network for the `hatchling` build backend) |
@@ -25,6 +25,7 @@ Optional (every one has a fallback — `tn` works without them):
 | `xdg-open` → `$BROWSER` | `o` open key | prints the URL |
 | `$EDITOR` → `$VISUAL` → `vi` | `-m` compose, `e` edit | — |
 | `fish` | autoshow hook + completions | everything else works in any shell |
+| `bash` / `zsh` | completions (`completions/tn.bash`, `completions/_tn`) | — |
 
 Environment variables: `TNOTES_DIR` (store dir, default
 `~/.local/share/tnotes`), `EDITOR`/`VISUAL`, `BROWSER`, `PAGER`,
@@ -39,11 +40,11 @@ ln -sf ~/tnotes/.venv/bin/tn ~/.local/bin/tn   # or wherever your pipx/uv-tool t
 mkdir -p ~/.config/fish/conf.d ~/.config/fish/completions
 ln -sf ~/tnotes/fish/conf.d/tnotes-autoshow.fish ~/.config/fish/conf.d/
 ln -sf ~/tnotes/fish/completions/tn.fish ~/.config/fish/completions/
+# bash:  source ~/tnotes/completions/tn.bash   # from ~/.bashrc
+# zsh:    ln -sf ~/tnotes/completions/_tn ~/.zsh/completions/_tn  # $fpath entry
 tn path                             # prints store path; run once to confirm install
 python -m pytest -q                 # optional sanity check (needs the install above first)
 ```
-
-Old `note` (~/.local/bin/note + fish hooks) keeps working until sunset — do not delete yet.
 
 ## Shell startup (optional, manual)
 

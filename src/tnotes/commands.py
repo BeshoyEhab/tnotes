@@ -67,7 +67,7 @@ def compose_text(entry_type: str, initial: str = "") -> str | None:
         f.write(header + tmpl + (initial or ""))
     if actions.edit_in_editor(tmp) != 0:
         print(f"editor exited non-zero; draft kept at {tmp}")
-        return None  # no unlink: draft preserved (see Task 4 fix)
+        return None  # no unlink: draft preserved on purpose
     lines = [ln for ln in Path(tmp).read_text(encoding="utf-8").splitlines()
              if not ln.lstrip().startswith("#")]
     try:

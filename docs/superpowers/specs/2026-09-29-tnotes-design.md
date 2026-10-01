@@ -6,8 +6,7 @@ Approach: A — JSONL + fzf picker (fresh repo, no compat)
 
 ## 1. Goal
 
-Replace `~/.local/bin/note` (global + per-dir timestamped notes, fish autoshow)
-with `tn` — a Python CLI in `~/tnotes` git repo that stores typed entries
+Build `tn` — a Python CLI that stores typed entries
 (url, cmd, note, future types) and lets the user preview safely first,
 then open / run / copy / edit from the terminal.
 
@@ -152,14 +151,13 @@ tn edit <id> / tn rm <id> / tn done <id> / tn undone <id> / tn hide <id> / tn un
 
 - New `conf.d/tnotes-autoshow.fish`: on `PWD` change, once per shell per dir,
   run `tn show --startup -l` (this dir, active, show_on_open only; global skipped
-  unless `NOTE_AUTOSHOW_GLOBAL=1` → plain `tn show --startup`). Mirrors old `note-autoshow.fish`.
+   unless `NOTE_AUTOSHOW_GLOBAL=1` → plain `tn show --startup`).
 - New `completions/tn.fish`, one startup line in `config.fish` (`tn show --startup`).
-  Old `note` files left untouched until sunset.
 - Future types = new `type` value only. Only `extract.py` learns new patterns.
 - Env: `TNOTES_DIR`, `EDITOR`/`VISUAL`, `BROWSER`, `PAGER`.
   Clipboard: `wl-copy` → `xclip` → `xsel`. Opener: `xdg-open` → `$BROWSER`.
 
-## 6. Errors, testing, sunset
+## 6. Errors and testing
 
 Errors: failed writes preserve temp file; missing `fzf` falls back to `tn list`;
 missing opener/clipboard prints content + path; `run` always asks `run? [y/N]`,
@@ -169,17 +167,9 @@ Tests (`pytest`): store round-trip + atomicity + scope/cwd/status/show_on_open d
 extract (bare / `[label](url)` / `` `x` `` / fenced, `!` + `\` untouched);
 CLI add/show/search + filters (`-g`/`-l`/`--all`/`--done`, autoshow hides done + hidden).
 
-Sunset old `note` (single-user, agent does it, no import command in `tn`):
-1. Build `tn` stable with its own store.
-2. 1–2 weeks validation → agent one-off manual migration
-   (`~/.local/share/mynotes/global.md` → global/active/show_on_open=true notes;
-   `local/*.md` → local notes with cwd from old index.json), user verifies.
-3. Delete `~/.local/bin/note`, `note-autoshow.fish`, `completions/note.fish`,
-   startup block. Keep `~/.local/share/mynotes/` backup until user says delete.
-
 ## 7. Success criteria
 
 - `tn --url/--cmd/--note [-g|-l]` + `tn -m` work; `!`/`\` never trigger actions.
 - Picker defaults here-only; `tn --all` shows other dirs; `tn done/hide` + `--done`/`--hidden` work; autoshow shows this dir active + pinned only, silent when empty.
 - `tn` picker previews with Actions list; `o`/`r`/`c`/`e`/`enter` work; big notes truncate at 100 + full in pager.
-- `pytest` green. Fresh `~/tnotes` repo committed. Old `note` still works until sunset.
+- `pytest` green. Fresh `~/tnotes` repo committed.

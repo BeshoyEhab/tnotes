@@ -1,4 +1,4 @@
-"""tn CLI. Add paths in this task; list/show/search/picker in Tasks 5-6."""
+"""tn CLI: quick-add parsing plus subcommand dispatch."""
 import argparse
 import os
 import sys
@@ -27,9 +27,9 @@ def _resolve_scope(args) -> tuple[str, str | None]:
         return "global", None
     return "local", os.path.realpath(os.getcwd())
 
-# NOTE (Task 4 fix): argparse cannot mix a top-level `text` positional with
+# argparse cannot mix a top-level `text` positional with
 # subparsers — `tn <text>` and `tn done <id>` both misparsed (invalid choice).
-# So the quick-add positional is extracted here; build_parser has no `text`.
+# So the quick-add positional is extracted manually; build_parser has no `text`.
 _SUB_COMMANDS = {"list", "search", "show", "open", "run", "edit", "rm",
                  "done", "undone", "hide", "unhide", "path", "tui"}
 _VALUE_OPTIONS = {"--url", "--cmd", "--note", "--title", "--tags"}
@@ -160,7 +160,6 @@ def main(argv: list[str] | None = None) -> int:
             print(exc, file=sys.stderr)
             return 1
     if args.sub == "edit":
-        from .extract import extract_actions  # noqa: F401 (used Task 5)
         try:
             e = commands.resolve_entry(args.arg)
         except EntryNotFound as exc:
@@ -204,8 +203,8 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             return cmd_add(args)
         return cmd_add(args)
-    # read paths + picker land in Tasks 5-6; stub keeps dispatch total
-    from . import cli_read as _r  # lazy: created in Task 5
+    # read/action dispatch lives in cli_read / cli_actions.
+    from . import cli_read as _r  # lazy: avoids importing picker at startup
     return _r.dispatch(args)
 
 if __name__ == "__main__":

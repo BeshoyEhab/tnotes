@@ -152,6 +152,6 @@ def dispatch(args) -> int:
         return cmd_search(args)
     if args.sub == "show":
         return cmd_show(args)
-    # open/run + bare picker land in Task 6
+    # open/run + bare picker dispatch.
     from . import cli_actions as _a
     return _a.dispatch(args)

@@ -1,5 +1,4 @@
 # fish/conf.d/tnotes-autoshow.fish — per-dir autoshow, once per shell per dir.
-# Mirrors old note-autoshow.fish. Old `note` files stay untouched.
 function __tnotes_autoshow --on-variable PWD
     set -q __tnotes_last_dir; or set -g __tnotes_last_dir ""
     if test "$PWD" = "$__tnotes_last_dir"
