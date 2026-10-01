@@ -1,4 +1,6 @@
 """Typed Entry model. Sole schema definition; JSONL lines stay compatible."""
+from __future__ import annotations
+
 import re
 from dataclasses import dataclass, field
 
