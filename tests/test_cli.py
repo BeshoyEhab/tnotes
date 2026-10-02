@@ -184,3 +184,34 @@ def test_tui_subcommand_routes_to_picker(tmp_path, monkeypatch, capsys):
     assert len(store.load_all()) == 0  # editor never ran, nothing added
     assert main(["tui", "--all"]) == 0
     assert launched.get("all_dirs") is True
+
+def test_list_color_when_enabled_no_color_when_env(tmp_path, monkeypatch, capsys):
+    import tnotes.cli_read as R
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    store.add_entry(type="note", title="t", body="b", tags=["a"], scope="global",
+                    cwd=None, show_on_open=True)
+    monkeypatch.setattr(R, "_color_enabled", lambda: True)
+    assert main(["list"]) == 0
+    assert "\033[" in capsys.readouterr().out
+    monkeypatch.setattr(R, "_color_enabled", lambda: False)
+    assert main(["list"]) == 0
+    assert "\033[" not in capsys.readouterr().out
+
+def test_color_gate_respects_env(tmp_path, monkeypatch, capsys):
+    import tnotes.cli_read as R
+    assert R._color_enabled() is False  # pytest stdout is not a tty
+    monkeypatch.setenv("NO_COLOR", "1")
+    assert R._color_enabled() is False
+    monkeypatch.delenv("NO_COLOR")
+    monkeypatch.setenv("TERM", "dumb")
+    assert R._color_enabled() is False
+
+def test_startup_headers_bold_when_color(tmp_path, monkeypatch, capsys):
+    import tnotes.cli_read as R
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    store.add_entry(type="note", title="g", body="b", tags=[],
+                    scope="global", cwd=None, show_on_open=True)
+    monkeypatch.setattr(R, "_color_enabled", lambda: True)
+    assert main(["show", "--startup", "--all"]) == 0
+    out = capsys.readouterr().out
+    assert "\033[1mGlobal notes:\033[0m" in out

@@ -27,9 +27,39 @@ def _entries_for(args, cwd=None):
         include_done=getattr(args, "done", False),
         all_dirs=getattr(args, "all", False))
 
+def _color_enabled() -> bool:
+    """ANSI color only for interactive terminals: never into pipes, dumb
+    terminals, or when NO_COLOR is set (https://no-color.org)."""
+    if os.environ.get("NO_COLOR"):
+        return False
+    if os.environ.get("TERM") == "dumb":
+        return False
+    try:
+        return sys.stdout.isatty()
+    except Exception:
+        return False
+
+def _c(text: str, *codes: str) -> str:
+    return "".join(f"\033[{c}m" for c in codes) + text + "\033[0m"
+
+def _tags_out(entry: Entry, color: bool) -> str:
+    if not entry.tags:
+        return ""
+    tags = f" [{','.join(entry.tags)}]"
+    return _c(tags, "36") if color else tags
+
+def _row_out(entry: Entry, color: bool) -> str:
+    if not color:
+        return f"{format_row(entry)} {entry.id}"
+    done = _c("✔ ", "32") if entry.status == "done" else ""
+    icon = ICONS.get(entry.type, "📝")
+    scope = _c("G" if entry.scope == "global" else "·", "2")
+    return f"{done}{icon} {entry.title}{_tags_out(entry, True)} {scope} {_c(entry.id, '2')}"
+
 def cmd_list(args) -> int:
+    color = _color_enabled()
     for e in _entries_for(args):
-        print(f"{format_row(e)} {e.id}")
+        print(_row_out(e, color))
     return 0
 
 def cmd_search(args) -> int:
@@ -38,11 +68,12 @@ def cmd_search(args) -> int:
         scope = "global"
     elif getattr(args, "l", False):
         scope = "local"
+    color = _color_enabled()
     for e in commands.do_search(
             args.arg or "", scope=scope, cwd=None,
             include_done=getattr(args, "done", False),
             all_dirs=getattr(args, "all", False)):
-        print(f"{format_row(e)} {e.id}")
+        print(_row_out(e, color))
     return 0
 
 ICONS = {"url": "🔗", "cmd": "$", "note": "📝"}
@@ -123,28 +154,28 @@ def _rich_preview(text: str) -> str:
         return text
     return p.stdout.decode()
 
-def _startup_line(entry: Entry) -> str:
+def _startup_line(entry: Entry, color: bool = False) -> str:
     icon = ICONS.get(entry.type, "📝")
-    tags = f" [{','.join(entry.tags)}]" if entry.tags else ""
-    return f"{icon} {entry.title}{tags}".rstrip()
+    return f"{icon} {entry.title}{_tags_out(entry, color)}".rstrip()
 
 def _startup_compact(entries: list[Entry], only_global: bool = False,
-                     only_local: bool = False) -> str:
+                     only_local: bool = False, color: bool = False) -> str:
     """Old-note style greeting: numbered one-liners under section headers."""
+    head = (lambda s: _c(s, "1")) if color else (lambda s: s)
     out: list[str] = []
     if not only_local:
         g = [e for e in entries if e.scope == "global"]
         if g:
-            out.append("Global notes:")
-            out += [f"  {i}. {_startup_line(e)}" for i, e in enumerate(g, 1)]
+            out.append(head("Global notes:"))
+            out += [f"  {i}. {_startup_line(e, color)}" for i, e in enumerate(g, 1)]
     if not only_global:
         loc = [e for e in entries if e.scope != "global"]
         if loc:
             if out:
                 out.append("")
             cwd = os.path.realpath(os.getcwd())
-            out.append(f"This folder ({cwd}):")
-            out += [f"  {i}. {_startup_line(e)}" for i, e in enumerate(loc, 1)]
+            out.append(head(f"This folder ({cwd}):"))
+            out += [f"  {i}. {_startup_line(e, color)}" for i, e in enumerate(loc, 1)]
     return "\n".join(out) + "\n" if out else ""
 
 def cmd_show(args) -> int:
@@ -167,7 +198,8 @@ def cmd_show(args) -> int:
             return 0  # silent when empty
         sys.stdout.write(_startup_compact(
             entries, only_global=getattr(args, "g", False),
-            only_local=getattr(args, "l", False)))
+            only_local=getattr(args, "l", False),
+            color=_color_enabled()))
         return 0
     for e in entries:
         sys.stdout.write(render_preview(e, extract_actions(e)) + "\n")
