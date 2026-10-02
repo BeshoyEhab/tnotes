@@ -46,13 +46,12 @@ tn path                             # prints store path; run once to confirm ins
 python -m pytest -q                 # optional sanity check (needs the install above first)
 ```
 
-## Shell startup (optional, manual)
+## Shell startup (automatic)
 
-The conf.d hook shows notes on every directory change. For a show at shell
-startup too, add this one-liner to `~/.config/fish/config.fish` by hand
-(it is deliberately not scripted):
-
-tn show --startup -l 2>/dev/null
+The conf.d hook shows each directory at most once per shell — revisits
+stay silent, new dirs still show, and the initial shell directory is
+covered too. No manual `config.fish` line needed; if you still have the
+old `tn show --startup -l` one-liner, remove it to avoid double-showing.
 
 ## Usage (abridged)
 
