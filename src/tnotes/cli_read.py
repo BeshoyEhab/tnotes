@@ -123,6 +123,30 @@ def _rich_preview(text: str) -> str:
         return text
     return p.stdout.decode()
 
+def _startup_line(entry: Entry) -> str:
+    icon = ICONS.get(entry.type, "📝")
+    tags = f" [{','.join(entry.tags)}]" if entry.tags else ""
+    return f"{icon} {entry.title}{tags}".rstrip()
+
+def _startup_compact(entries: list[Entry], only_global: bool = False,
+                     only_local: bool = False) -> str:
+    """Old-note style greeting: numbered one-liners under section headers."""
+    out: list[str] = []
+    if not only_local:
+        g = [e for e in entries if e.scope == "global"]
+        if g:
+            out.append("Global notes:")
+            out += [f"  {i}. {_startup_line(e)}" for i, e in enumerate(g, 1)]
+    if not only_global:
+        loc = [e for e in entries if e.scope != "global"]
+        if loc:
+            if out:
+                out.append("")
+            cwd = os.path.realpath(os.getcwd())
+            out.append(f"This folder ({cwd}):")
+            out += [f"  {i}. {_startup_line(e)}" for i, e in enumerate(loc, 1)]
+    return "\n".join(out) + "\n" if out else ""
+
 def cmd_show(args) -> int:
     if args.arg:  # show <id> [--preview]
         try:
@@ -141,6 +165,10 @@ def cmd_show(args) -> int:
                    if e.status == "active" and e.show_on_open]
         if not entries:
             return 0  # silent when empty
+        sys.stdout.write(_startup_compact(
+            entries, only_global=getattr(args, "g", False),
+            only_local=getattr(args, "l", False)))
+        return 0
     for e in entries:
         sys.stdout.write(render_preview(e, extract_actions(e)) + "\n")
     return 0

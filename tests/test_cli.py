@@ -48,6 +48,19 @@ def test_show_startup_silent_when_empty(tmp_path, monkeypatch, capsys):
     assert main(["show", "--startup"]) == 0
     assert capsys.readouterr().out == ""
 
+def test_show_startup_compact_like_old_note(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    store.add_entry(type="note", title="g", body="g-body", tags=[],
+                    scope="global", cwd=None, show_on_open=True)
+    store.add_entry(type="note", title="l", body="l-body", tags=[],
+                    scope="local", cwd=os.path.realpath(os.getcwd()),
+                    show_on_open=True)
+    assert main(["show", "--startup", "--all"]) == 0
+    out = capsys.readouterr().out
+    assert "Body (wrapped)" not in out and "Actions:" not in out
+    assert "Global" in out and "This folder" in out
+    assert "  1. " in out and "g-body" not in out and "l-body" not in out
+
 def test_preview_caps_100_lines(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
     body = "\n".join(f"line {i}" for i in range(150))
