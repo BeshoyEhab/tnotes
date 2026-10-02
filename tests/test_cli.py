@@ -152,14 +152,35 @@ def test_preview_plain_without_mdcat(tmp_path, monkeypatch, capsys):
     assert "hello" in out and "PRETTY:" not in out
 
 def test_tui_subcommand_routes_to_picker(tmp_path, monkeypatch, capsys):
+    import sys
+    import tnotes.cli_actions as A
     import tnotes.picker as P
+    import tnotes.tui as T
     monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
     monkeypatch.chdir(tmp_path)
     store.add_entry(type="note", title="x", body="b", tags=[],
                     scope="global", cwd=None, show_on_open=True)
-    monkeypatch.setattr(P, "run_picker", lambda entries: (None, None))
+    # no terminal here: explicit tui must error clearly, not silently fzf
+    monkeypatch.setattr(P, "run_picker", lambda entries: (_ for _ in ()).throw(
+        AssertionError("fzf fallback must not run for tn tui")))
+    assert main(["tui"]) == 1
+    assert "interactive terminal" in capsys.readouterr().err
+    # ...but with a terminal it always launches the TUI, even when empty
+    for e in store.load_all():
+        assert store.delete_entry(e.id)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    launched = {}
+    class FakeApp:
+        def __init__(self, **kwargs):
+            launched.update(kwargs)
+        def run(self):
+            launched["ran"] = True
+    monkeypatch.setattr(T, "TnotesApp", FakeApp)
+    monkeypatch.setattr(A, "_compose_new_note", lambda *a: (_ for _ in ()).throw(
+        AssertionError("editor must not open for tn tui")))
     assert main(["tui"]) == 0
-    assert len(store.load_all()) == 1
-    assert all(e.title != "tui" for e in store.load_all())
+    assert launched.get("ran") is True
+    assert len(store.load_all()) == 0  # editor never ran, nothing added
     assert main(["tui", "--all"]) == 0
-    assert len(store.load_all()) == 1
+    assert launched.get("all_dirs") is True

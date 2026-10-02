@@ -79,9 +79,28 @@ def _handle_picked(key: str | None, entry_id: str | None) -> int:
         return _main(["edit", entry_id])
     return 0  # q/quit
 
+def cmd_tui(args) -> int:
+    """Explicit `tn tui`: always the TUI or a clear error — never the
+    bare-picker fallbacks (editor/fzf), which belong to bare `tn` only."""
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        print("error: tn tui needs an interactive terminal.", file=sys.stderr)
+        return 1
+    try:
+        from .tui import TnotesApp
+    except ImportError:
+        print("error: tn tui needs the 'textual' package.", file=sys.stderr)
+        return 1
+    app = TnotesApp(
+        scope="global" if getattr(args, "g", False) else
+              "local" if getattr(args, "l", False) else "here",
+        all_dirs=getattr(args, "all", False),
+        include_done=getattr(args, "done", False))
+    app.run()
+    return 0
+
 def dispatch(args) -> int:
     if args.sub == "tui":
-        args.sub = None
+        return cmd_tui(args)
     if args.sub == "open":
         return cmd_open(args)
     if args.sub == "run":
