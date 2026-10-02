@@ -203,3 +203,103 @@ async def test_click_row_selects_entry(tmp_path, monkeypatch):
         await _click_center(pilot, app, f"#row-{row.id}")
         await pilot.pause()
         assert app.current_entry.title == "second"
+
+async def test_tui_open_detaches_browser_stdio(tmp_path, monkeypatch):
+    """Opening a link must not let the browser's stdout scribble on the TUI."""
+    await _two(tmp_path, monkeypatch)
+    import tnotes.tui as T
+    calls = {}
+    def fake_open(url, **kwargs):
+        calls.update(url=url, **kwargs)
+        return 0
+    monkeypatch.setattr(T.actions, "open_target", fake_open)
+    from tnotes.tui import TnotesApp
+    app = TnotesApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app._run_open("https://a.example")
+        await pilot.pause()
+        await pilot.pause()
+        assert calls.get("url") == "https://a.example"
+        assert calls.get("quiet") is True
+
+async def test_tui_run_cmd_reaches_backend(tmp_path, monkeypatch):
+    """_run_cmd must reach run_command (headless takes the no-suspend path)."""
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    import tnotes.tui as T
+    calls = {}
+    monkeypatch.setattr(T.actions, "run_command",
+                        lambda cmd, confirm=False: calls.update(cmd=cmd) or 0)
+    from tnotes.tui import TnotesApp
+    app = TnotesApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app._run_cmd("echo hi")
+        assert calls.get("cmd") == "echo hi"
+
+def _seed_tree(tmp_path, monkeypatch):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    store.add_entry(type="note", title="root-note", body="root-body", tags=[],
+                    scope="local", cwd=str(tmp_path), show_on_open=True)
+    store.add_entry(type="note", title="sub-note", body="sub-body", tags=[],
+                    scope="local", cwd=str(sub), show_on_open=True)
+    store.add_entry(type="note", title="g-note", body="g-body", tags=[],
+                    scope="global", cwd=None, show_on_open=True)
+    return sub
+
+def _labels(app):
+    from textual.widgets import ListView
+    lv = app.screen.query_one("#entries", ListView)
+    return [str(item.query_one("Label").render()) for item in lv.children]
+
+async def test_grouped_lists_dirs_collapsed(tmp_path, monkeypatch):
+    _seed_tree(tmp_path, monkeypatch)
+    from tnotes.tui import TnotesApp
+    app = TnotesApp(root=str(tmp_path))
+    async with app.run_test(size=(120, 30)) as pilot:
+        await pilot.pause()
+        labels = _labels(app)
+        assert any("Global (1)" in l for l in labels)
+        assert any("sub (1)" in l for l in labels)
+        assert not any("sub-body" in l for l in labels)  # collapsed: no entries
+
+async def test_enter_expands_group_and_previews_summary(tmp_path, monkeypatch):
+    _seed_tree(tmp_path, monkeypatch)
+    from textual.widgets import ListView
+    from tnotes.tui import TnotesApp
+    app = TnotesApp(root=str(tmp_path))
+    async with app.run_test(size=(120, 30)) as pilot:
+        await pilot.pause()
+        labels = _labels(app)
+        sub_idx = next(i for i, l in enumerate(labels) if "sub (1)" in l)
+        app.screen.query_one("#entries", ListView).index = sub_idx
+        await pilot.pause()
+        await pilot.pause()  # row rebuild mounts new rows async
+        assert any("sub-note" in l for l in _labels(app))
+        assert "sub" in app.preview_source
+
+async def test_backspace_roots_at_parent(tmp_path, monkeypatch):
+    sub = _seed_tree(tmp_path, monkeypatch)
+    from tnotes.tui import TnotesApp
+    app = TnotesApp(root=str(sub))
+    async with app.run_test(size=(120, 30)) as pilot:
+        await pilot.pause()
+        assert app.root == str(sub)
+        await pilot.press("backspace")
+        await pilot.pause()
+        assert app.root == str(tmp_path)
+
+async def test_filter_auto_expands_hits(tmp_path, monkeypatch):
+    _seed_tree(tmp_path, monkeypatch)
+    from tnotes.tui import TnotesApp
+    app = TnotesApp(root=str(tmp_path))
+    async with app.run_test(size=(120, 30)) as pilot:
+        await pilot.pause()
+        await pilot.click("#filter")
+        await pilot.press(*"sub-body")
+        await pilot.pause()
+        await pilot.pause()  # one rebuild per keystroke settles async
+        assert any("sub-note" in l for l in _labels(app))
+        assert not any("root-note" in l for l in _labels(app))

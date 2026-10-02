@@ -68,7 +68,9 @@ Env: TNOTES_DIR, EDITOR/VISUAL, BROWSER, PAGER, NOTE_AUTOSHOW_GLOBAL=1.
 ## TUI keys
 
 `tn tui` opens the persistent browser (mouse click/wheel work; narrow
-windows stack panes via the compact layout). Every keybar action is also a
+windows stack panes via the compact layout). Entries are grouped by
+directory — `enter`/click a folder to expand it, `backspace` (or the
+`^ parent` button) to go up. Every keybar action is also a
 clickable button; clicking a row selects it, clicking a dialog field focuses
 it. Mouse needs terminal support — inside tmux set `set -g mouse on`.
 
@@ -84,4 +86,5 @@ it. Mouse needs terminal support — inside tmux set `set -g mouse on`.
 | `d` | toggle done/active |
 | `h` | toggle hide/show-on-open |
 | `n` | new note dialog (`ctrl-s` save, `esc` cancel) |
+| `backspace` | browse parent directory |
 | `q` | quit |

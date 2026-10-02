@@ -16,3 +16,21 @@ def test_run_command_confirm_no(monkeypatch, capsys):
     rc = actions.run_command("echo SHOULD-NOT-RUN", confirm=True)
     assert rc == 130
     assert "SHOULD-NOT-RUN" not in capsys.readouterr().out
+
+def test_open_target_quiet_detaches_stdio(monkeypatch):
+    calls = {}
+    class FakeProc:
+        returncode = 0
+    def fake_run(argv, **kwargs):
+        calls.update(kwargs)
+        return FakeProc()
+    monkeypatch.setattr(actions, "find_exe", lambda names: "/usr/bin/xdg-open")
+    monkeypatch.setattr(actions.subprocess, "run", fake_run)
+    assert actions.open_target("https://x.example", quiet=True) == 0
+    import subprocess
+    assert calls.get("stdout") == subprocess.DEVNULL
+    assert calls.get("stderr") == subprocess.DEVNULL
+    calls.clear()
+    assert actions.open_target("https://x.example") == 0
+    assert calls.get("stdout") is None
+    assert calls.get("stderr") is None

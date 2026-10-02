@@ -1,4 +1,5 @@
 """Persistent textual TUI. Browse shell in this task; actions in the next."""
+import os
 from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -81,6 +82,11 @@ class EntrySelected(Message):
         super().__init__()
         self.entry = entry
 
+class GroupSelected(Message):
+    def __init__(self, key: str) -> None:
+        super().__init__()
+        self.key = key
+
 class TnotesApp(App):
     CSS_PATH = "tnotes.css"
     BINDINGS = [("q", "quit", "quit"), ("/", "focus_filter", "filter"),
@@ -89,6 +95,7 @@ class TnotesApp(App):
                 ("c", "copy_body", "copy"), ("d", "toggle_done", "done"),
                 ("h", "toggle_hide", "hide"), ("n", "new_note", "new"),
                 ("e", "edit_here", "edit"), ("E", "edit_external", "editor"),
+                ("backspace", "go_parent", "parent"),
                 # priority: ListView binds enter to select_cursor; without
                 # priority the app-level primary would never fire when the
                 # entries list has focus. check_action disables primary on
@@ -96,15 +103,25 @@ class TnotesApp(App):
                 Binding("enter", "primary", "act", priority=True)]
 
     def __init__(self, scope: str = "here", all_dirs: bool = False,
-                 include_done: bool = False) -> None:
+                 include_done: bool = False, root: str | None = None) -> None:
         super().__init__()
         self.scope = scope
         self.all_dirs = all_dirs
         self.include_done = include_done
+        self.root = root or os.path.realpath(os.getcwd())
+        if self.all_dirs and self.scope != "global":
+            self.root = "/"
+        self.exact_only = (self.scope == "local" and not self.all_dirs)
+        self.global_only = (self.scope == "global")
         self.entries: list[Entry] = []
         self.shown: list[Entry] = []
+        self.groups: list[tuple[str, str, list[Entry]]] = []
+        self.rows: list[tuple[str, str]] = []  # ("group", key) | ("entry", id)
+        self.expanded: set[str] = set()
         self.query: str = ""
         self.current_entry: Entry | None = None
+        self.current_group: str | None = None
+        self._hold_collapsed: str | None = None
         self.preview_source: str = ""
         self.keybar_plain: str = ""
         self._editing: Entry | None = None
@@ -116,6 +133,7 @@ class TnotesApp(App):
             yield ListView(id="entries")
             yield Markdown(id="preview")
         with Horizontal(id="keybar"):
+            yield Button("^ parent", id="kb-up", compact=True)
             yield Button("/ filter", id="kb-filter", compact=True)
             yield Button("o open", id="kb-open", compact=True)
             yield Button("r run", id="kb-run", compact=True)
@@ -134,8 +152,21 @@ class TnotesApp(App):
 
     def refresh_entries(self, keep_selection: bool = True) -> None:
         keep = self.current_entry.id if (keep_selection and self.current_entry) else None
-        self.entries = commands.do_list(scope=self.scope, include_done=self.include_done,
-                                        all_dirs=self.all_dirs)
+        if self.global_only:
+            self.entries = commands.do_list(scope="global", all_dirs=True,
+                                            include_done=self.include_done)
+        elif self.exact_only:
+            self.entries = commands.do_list(scope="local", cwd=self.root,
+                                            all_dirs=False,
+                                            include_done=self.include_done)
+        else:
+            self.entries = commands.do_list(scope="here", cwd=self.root,
+                                            all_dirs=True,
+                                            include_done=self.include_done)
+        try:
+            self.query_one("#filter", Input).placeholder = f"{self.root} · filter…"
+        except Exception:
+            pass
         self.apply_filter()
         if keep:
             same = [e for e in self.shown if e.id == keep]
@@ -143,16 +174,56 @@ class TnotesApp(App):
         else:
             self.select_entry(self.shown[0] if self.shown else None)
 
+    def build_groups(self) -> list[tuple[str, str, list[Entry]]]:
+        """Group filtered entries: Global first, then root, then subdirs."""
+        groups: list[tuple[str, str, list[Entry]]] = []
+        if not self.exact_only:
+            g = [e for e in self.shown if e.scope == "global"]
+            groups.append(("global", f"🌍 Global ({len(g)})", g))
+        if self.global_only:
+            return groups
+        locals_ = [e for e in self.shown if e.scope == "local"]
+        if self.exact_only:
+            here = [e for e in locals_ if e.cwd == self.root]
+            groups.append((self.root, f"📁 . ({len(here)})", here))
+            return groups
+        bydir: dict[str, list[Entry]] = {}
+        for e in locals_:
+            if e.cwd == self.root or (e.cwd or "").startswith(self.root + os.sep):
+                bydir.setdefault(e.cwd or self.root, []).append(e)
+        if self.root in bydir:
+            here = bydir.pop(self.root)
+            groups.append((self.root, f"📁 . ({len(here)})", here))
+        for d in sorted(bydir):
+            rel = os.path.relpath(d, self.root)
+            groups.append((d, f"📁 {rel} ({len(bydir[d])})", bydir[d]))
+        return groups
+
     def apply_filter(self) -> None:
         q = self.query.lower()
         self.shown = [e for e in self.entries
                         if not q or q in (e.title + "\n" + e.body).lower()]
+        self.groups = self.build_groups()
+        if q:
+            effective = {key for key, _, _ in self.groups}
+        else:
+            if not self.expanded:
+                self.expanded = {"global", self.root}
+            effective = set(self.expanded)
+        self.rows = []
+        for key, _, ents in self.groups:
+            self.rows.append(("group", key))
+            if key in effective:
+                self.rows += [("entry", e.id) for e in ents]
         self._rebuild_rows()
         if self.current_entry and self.current_entry.id not in {e.id for e in self.shown}:
             self.select_entry(self.shown[0] if self.shown else None)
 
+    def _entry_by_id(self, entry_id: str) -> Entry | None:
+        return next((e for e in self.entries if e.id == entry_id), None)
+
     def _rebuild_rows(self) -> None:
-        """Sync ListView rows with self.shown.
+        """Sync ListView rows with self.rows (group headers + entries).
 
         Row removal/mounting is async; run it in an exclusive worker so
         rapid filter keystrokes cannot interleave a clear with a stale
@@ -163,8 +234,15 @@ class TnotesApp(App):
             lv = self.query_one("#entries", ListView)
         except Exception:
             return
-        rows = [ListItem(Label(format_row(e)), id=f"row-{e.id}")
-                for e in self.shown]
+        labels = {key: label for key, label, _ in self.groups}
+        rows = []
+        for n, (kind, ref) in enumerate(self.rows):
+            if kind == "group":
+                rows.append(ListItem(Label(labels.get(ref, ref)), id=f"grp-{n}"))
+            else:
+                e = self._entry_by_id(ref)
+                if e is not None:
+                    rows.append(ListItem(Label(format_row(e)), id=f"row-{e.id}"))
 
         async def _do() -> None:
             await lv.clear()
@@ -175,13 +253,28 @@ class TnotesApp(App):
         self.run_worker(_do(), name="rebuild-rows", group="tnotes-list",
                         exclusive=True, exit_on_error=False)
 
+    def _current_row_index(self) -> int | None:
+        for i, (kind, ref) in enumerate(self.rows):
+            if kind == "entry" and self.current_entry and ref == self.current_entry.id:
+                return i
+            if kind == "group" and self.current_entry is None and ref == self.current_group:
+                return i
+        return None
+
     def select_entry(self, entry: Entry | None) -> None:
         self.current_entry = entry
+        self.current_group = None
         self.post_message(EntrySelected(entry))
         self._sync_list_highlight()
 
+    def select_group(self, key: str) -> None:
+        self.current_entry = None
+        self.current_group = key
+        self.post_message(GroupSelected(key))
+        self._sync_list_highlight()
+
     def _sync_list_highlight(self) -> None:
-        """Mirror current_entry onto ListView.index so j/k move relative to it.
+        """Mirror current selection onto ListView.index so j/k move relative.
 
         No-op while a rebuild worker is still mounting rows; the worker
         calls this again on completion.
@@ -190,22 +283,57 @@ class TnotesApp(App):
             lv = self.query_one("#entries", ListView)
         except Exception:
             return
-        if self.current_entry is None:
-            return
-        idx = next((i for i, e in enumerate(self.shown)
-                    if e.id == self.current_entry.id), None)
+        idx = self._current_row_index()
         if idx is not None and idx < len(lv):
             lv.index = idx
+
+    def _row_at_index(self, idx: int) -> tuple[str, str] | None:
+        if 0 <= idx < len(self.rows):
+            return self.rows[idx]
+        return None
 
     async def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
         if event.list_view.id != "entries":
             return
         idx = event.list_view.index
-        if idx is not None and 0 <= idx < len(self.shown):
-            self.select_entry(self.shown[idx])
+        if idx is None:
+            return  # transient: list is being rebuilt, ignore
+        row = self._row_at_index(idx)
+        if row is None:
+            return
+        kind, ref = row
+        if kind == "entry":
+            e = self._entry_by_id(ref)
+            if e is not None:
+                self.select_entry(e)
+        elif ref == self._hold_collapsed:
+            self._hold_collapsed = None  # enter-collapse won; stay collapsed
+            self.select_group(ref)
+        else:
+            if ref not in self.expanded:
+                self.expanded.add(ref)
+                self.apply_filter()
+            self.select_group(ref)
 
     async def on_entry_selected(self, message: EntrySelected) -> None:
         src = self.preview_markdown(message.entry)
+        self.preview_source = src
+        await self.query_one("#preview", Markdown).update(src)
+        self.update_keybar()
+
+    @staticmethod
+    def group_summary(key: str, label: str, entries: list[Entry]) -> str:
+        lines = [f"## {label}", f"{len(entries)} note(s) · enter toggles, click expands"]
+        for e in entries[:10]:
+            lines.append(f"- {e.title}")
+        if len(entries) > 10:
+            lines.append(f"- … (+{len(entries) - 10} more)")
+        return "\n\n".join(lines)
+
+    async def on_group_selected(self, message: GroupSelected) -> None:
+        info = next(((k, l, es) for k, l, es in self.groups if k == message.key),
+                    (message.key, message.key, []))
+        src = self.group_summary(*info)
         self.preview_source = src
         await self.query_one("#preview", Markdown).update(src)
         self.update_keybar()
@@ -220,7 +348,7 @@ class TnotesApp(App):
         tags = f"🏷️ {', '.join(entry.tags)}" if entry.tags else ""
         return "\n\n".join(p for p in [head, meta, tags, entry.body] if p)
 
-    _KB_ACTIONS = {"kb-filter": "focus_filter", "kb-open": "open_link",
+    _KB_ACTIONS = {"kb-up": "go_parent", "kb-filter": "focus_filter", "kb-open": "open_link",
                    "kb-run": "run_cmd", "kb-copy": "copy_body",
                    "kb-edit": "edit_here", "kb-done": "toggle_done",
                    "kb-hide": "toggle_hide", "kb-new": "new_note"}
@@ -248,7 +376,9 @@ class TnotesApp(App):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         action = self._KB_ACTIONS.get(event.button.id or "")
-        if action == "focus_filter":
+        if action == "go_parent":
+            self.action_go_parent()
+        elif action == "focus_filter":
             self.action_focus_filter()
         elif action == "open_link":
             self.action_open_link()
@@ -303,7 +433,7 @@ class TnotesApp(App):
         self._run_open(acts[idx])
 
     def _run_open(self, url: str) -> None:
-        self.run_worker(lambda: actions.open_target(url), thread=True,
+        self.run_worker(lambda: actions.open_target(url, quiet=True), thread=True,
                         description=f"open {url}")
         self.notify(f"opening {url}")
 
@@ -326,6 +456,10 @@ class TnotesApp(App):
     def action_primary(self) -> None:
         if isinstance(self.screen, ModalScreen):
             return
+        if self.current_entry is None:
+            if self.current_group is not None:
+                self.toggle_group(self.current_group)
+            return
         acts = selection_actions(self.current_entry)
         opens = acts["opens"]
         runs = acts["runs"]
@@ -338,6 +472,23 @@ class TnotesApp(App):
                 self._run_open(opens[0])
             else:
                 self._confirm_run(runs[0])
+
+    def toggle_group(self, key: str) -> None:
+        if key in self.expanded:
+            self.expanded.discard(key)
+            self._hold_collapsed = key
+        else:
+            self.expanded.add(key)
+        self.apply_filter()
+
+    def action_go_parent(self) -> None:
+        parent = os.path.dirname(self.root.rstrip(os.sep)) or os.sep
+        if parent == self.root:
+            return
+        self.root = parent
+        self.expanded = {"global", self.root}
+        self.current_group = None
+        self.refresh_entries(keep_selection=False)
 
     def _menu_primary(self, idx: int | None) -> None:
         acts = selection_actions(self.current_entry)
@@ -352,10 +503,13 @@ class TnotesApp(App):
             self._confirm_run(label[len("run "):])
 
     def _run_cmd(self, cmd: str) -> None:
-        def go():
+        from textual.app import SuspendNotSupported
+        try:
+            with self.suspend():  # real terminal for output, like $EDITOR
+                rc = actions.run_command(cmd, confirm=False)
+        except SuspendNotSupported:  # headless tests: no terminal to restore
             rc = actions.run_command(cmd, confirm=False)
-            self.call_from_thread(self.notify, f"exit: {rc}")
-        self.run_worker(go, thread=True, description=f"run {cmd}")
+        self.notify(f"exit: {rc}")
 
     def action_copy_body(self) -> None:
         if self.current_entry:
@@ -421,10 +575,9 @@ class TnotesApp(App):
         if not body.strip():
             self.notify("discarded (empty)", severity="warning")
             return
-        import os
         commands.do_add(type="note", title=title or body.splitlines()[0][:60],
                         body=body.strip(), tags=[], scope="local",
-                        cwd=os.path.realpath(os.getcwd()), show_on_open=True)
+                        cwd=self.root, show_on_open=True)
         self.refresh_entries(keep_selection=False)
 
     def action_edit_external(self) -> None:

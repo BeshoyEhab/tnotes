@@ -11,10 +11,15 @@ def find_exe(names: list[str]) -> str | None:
             return p
     return None
 
-def open_target(url: str) -> int:
+def open_target(url: str, *, quiet: bool = False) -> int:
+    """Open url. quiet detaches child stdio (for fullscreen TUIs, so opener
+    chatter like xdg-open's cannot scribble on the app); CLI keeps it False."""
     opener = find_exe(["xdg-open"])
     if opener:
-        return subprocess.run([opener, url]).returncode
+        return subprocess.run(
+            [opener, url],
+            stdout=subprocess.DEVNULL if quiet else None,
+            stderr=subprocess.DEVNULL if quiet else None).returncode
     browser = os.environ.get("BROWSER")
     if browser:
         return subprocess.run(browser.split() + [url]).returncode
