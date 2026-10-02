@@ -58,9 +58,18 @@ class ConfirmScreen(ModalScreen):
 
     def compose(self) -> ComposeResult:
         yield Label(f"run? [y/N]\n{self._cmd}")
+        with Horizontal():
+            yield Button("Yes", id="confirm-yes", compact=True)
+            yield Button("No", id="confirm-no", compact=True)
 
     def action_confirm(self) -> None:
         self.dismiss(True)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "confirm-yes":
+            self.dismiss(True)
+        elif event.button.id == "confirm-no":
+            self.dismiss(None)
 
 
 class NewNoteScreen(ModalScreen):

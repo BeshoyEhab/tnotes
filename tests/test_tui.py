@@ -303,3 +303,28 @@ async def test_filter_auto_expands_hits(tmp_path, monkeypatch):
         await pilot.pause()  # one rebuild per keystroke settles async
         assert any("sub-note" in l for l in _labels(app))
         assert not any("root-note" in l for l in _labels(app))
+
+async def test_confirm_dialog_yes_no_buttons(tmp_path, monkeypatch):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    store.add_entry(type="note", title="r", body="run `echo hi`", tags=[],
+                    scope="global", cwd=None, show_on_open=True)
+    import tnotes.tui as T
+    calls = {}
+    monkeypatch.setattr(T.TnotesApp, "_run_cmd",
+                        lambda self, cmd: calls.update(cmd=cmd))
+    from tnotes.tui import TnotesApp, ConfirmScreen
+    app = TnotesApp()
+    async with app.run_test(size=(120, 30)) as pilot:
+        await pilot.pause()
+        await pilot.press("r")  # single run action -> confirm dialog
+        await pilot.pause()
+        assert isinstance(app.screen_stack[-1], ConfirmScreen)
+        await _click_center(pilot, app, "#confirm-no")
+        await pilot.pause()
+        assert calls == {}
+        assert len(app.screen_stack) == 1
+        await pilot.press("r")
+        await pilot.pause()
+        await _click_center(pilot, app, "#confirm-yes")
+        await pilot.pause()
+        assert calls.get("cmd") == "echo hi"
