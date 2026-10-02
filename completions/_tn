@@ -39,7 +39,22 @@ _tn() {
         sub) _describe 'tn subcommand' subs ;;
         args)
             case "${words[2]}" in
-                list|search|show|open|run) _arguments '--all[all dirs]' '-g[global]' '-l[local]' '--done[completed]' '--hidden[hidden]' '--startup[startup]' '--preview[preview]' ;;
+                list|search) _arguments '--all[all dirs]' '-g[global]' '-l[local]' '--done[completed]' '--hidden[hidden]' '--startup[startup]' '--preview[preview]' ;;
+                show|open|run|edit|rm|hide|unhide)
+                    _arguments '--all[all dirs]' '-g[global]' '-l[local]' '--done[completed]' '--hidden[hidden]' '--startup[startup]' '--preview[preview]'
+                    local -a entries
+                    entries=(${(f)"$(tn list --done 2>/dev/null | awk '{id=$NF; NF-=2; sub(/^✔ /,""); sub(/^[^ ]+ /,""); printf "%s:%s %s\n", id, NR, $0}')"})
+                    _describe 'entry (id: number + title)' entries ;;
+                done)
+                    _arguments '--all[all dirs]' '-g[global]' '-l[local]' '--done[completed]' '--hidden[hidden]' '--startup[startup]' '--preview[preview]'
+                    local -a entries
+                    entries=(${(f)"$(tn list 2>/dev/null | awk '{id=$NF; NF-=2; sub(/^✔ /,""); sub(/^[^ ]+ /,""); printf "%s:%s %s\n", id, NR, $0}')"})
+                    _describe 'entry (id: number + title)' entries ;;
+                undone)
+                    _arguments '--all[all dirs]' '-g[global]' '-l[local]' '--done[completed]' '--hidden[hidden]' '--startup[startup]' '--preview[preview]'
+                    local -a entries
+                    entries=(${(f)"$(tn list --done 2>/dev/null | grep '^✔' | awk '{id=$NF; NF-=2; sub(/^✔ /,""); sub(/^[^ ]+ /,""); printf "%s:%s %s\n", id, NR, $0}')"})
+                    _describe 'entry (id: number + title)' entries ;;
             esac ;;
     esac
 }

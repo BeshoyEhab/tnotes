@@ -148,8 +148,8 @@ def main(argv: list[str] | None = None) -> int:
                 commands.do_set_show(args.arg, True)
             print(f"{args.sub} {args.arg}")
             return 0
-        except EntryNotFound:
-            print(f"no entry {args.arg}", file=sys.stderr)
+        except EntryNotFound as exc:
+            print(exc, file=sys.stderr)
             return 1
     if args.sub == "rm":
         try:

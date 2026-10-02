@@ -28,3 +28,32 @@ complete -c tn -n __fish_use_subcommand -a tui -d "open TUI browser"
 complete -c tn -l all -d "all dirs (picker)"
 complete -c tn -l startup -d "startup autoshow (silent when empty)"
 complete -c tn -l preview -d "preview rendering"
+# Single ID-main row per entry; description shows number + title.
+# done -> active only (tn list); undone -> done only; others -> all (tn list --done).
+# Numbers match resolve_entry modes so `tn done 1` == startup #1.
+function __tn_active
+    tn list 2>/dev/null | awk '{
+        id=$NF; NF-=2;
+        sub(/^✔ /,""); sub(/^[^ ]+ /,"");
+        printf "%s\t%s %s\n", id, NR, $0;
+    }' 2>/dev/null
+end
+function __tn_done_only
+    tn list --done 2>/dev/null | grep '^✔' 2>/dev/null | awk '{
+        id=$NF; NF-=2;
+        sub(/^✔ /,""); sub(/^[^ ]+ /,"");
+        printf "%s\t%s %s\n", id, NR, $0;
+    }' 2>/dev/null
+end
+function __tn_all
+    tn list --done 2>/dev/null | awk '{
+        id=$NF; NF-=2;
+        sub(/^✔ /,""); sub(/^[^ ]+ /,"");
+        printf "%s\t%s %s\n", id, NR, $0;
+    }' 2>/dev/null
+end
+complete -c tn -n "__fish_seen_subcommand_from done" -a "(__tn_active)"
+complete -c tn -n "__fish_seen_subcommand_from undone" -a "(__tn_done_only)"
+for sub in show open run edit rm hide unhide
+    complete -c tn -n "__fish_seen_subcommand_from $sub" -a "(__tn_all)"
+end

@@ -61,6 +61,21 @@ def test_show_startup_compact_like_old_note(tmp_path, monkeypatch, capsys):
     assert "Global" in out and "This folder" in out
     assert "  1. " in out and "g-body" not in out and "l-body" not in out
 
+def test_show_startup_shows_ids(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    e = store.add_entry(type="note", title="g", body="g-body", tags=[],
+                        scope="global", cwd=None, show_on_open=True)
+    assert main(["show", "--startup", "--all"]) == 0
+    assert e.id in capsys.readouterr().out
+
+def test_done_numeric_out_of_range_hints_list(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    store.add_entry(type="note", title="only", body="b", tags=[],
+                    scope="global", cwd=None, show_on_open=True)
+    assert main(["done", "9999999"]) == 1
+    assert "tn list" in capsys.readouterr().err
+
 def test_preview_caps_100_lines(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
     body = "\n".join(f"line {i}" for i in range(150))

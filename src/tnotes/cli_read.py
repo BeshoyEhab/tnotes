@@ -156,7 +156,8 @@ def _rich_preview(text: str) -> str:
 
 def _startup_line(entry: Entry, color: bool = False) -> str:
     icon = ICONS.get(entry.type, "📝")
-    return f"{icon} {entry.title}{_tags_out(entry, color)}".rstrip()
+    base = f"{icon} {entry.title}{_tags_out(entry, color)}".rstrip()
+    return f"{base} · {entry.id}"
 
 def _startup_compact(entries: list[Entry], only_global: bool = False,
                      only_local: bool = False, color: bool = False) -> str:
