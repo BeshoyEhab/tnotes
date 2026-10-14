@@ -25,7 +25,7 @@ Optional (every one has a fallback — `tn` works without them):
 | `xdg-open` → `$BROWSER` | `o` open key | prints the URL |
 | `$EDITOR` → `$VISUAL` → `vi` | `-m` compose, `e` edit | — |
 | `fish` | autoshow hook + completions | everything else works in any shell |
-| `bash` / `zsh` | completions (`completions/tn.bash`, `completions/_tn`) | — |
+| `bash` / `zsh` | completions | — |
 
 Environment variables: `TNOTES_DIR` (store dir, default
 `~/.local/share/tnotes`), `EDITOR`/`VISUAL`, `BROWSER`, `PAGER`,
@@ -33,18 +33,41 @@ Environment variables: `TNOTES_DIR` (store dir, default
 
 ## Install
 
+One line — clones to `~/tnotes`, links `tn`, installs shell completions +
+the fish autoshow hook (re-run anytime; it updates in place):
+
 ```bash
-git clone <repo-url> ~/tnotes && cd ~/tnotes
-uv sync                             # or: pip install -e .
-ln -sf ~/tnotes/.venv/bin/tn ~/.local/bin/tn   # or wherever your pipx/uv-tool tn lives
-mkdir -p ~/.config/fish/conf.d ~/.config/fish/completions
-ln -sf ~/tnotes/fish/conf.d/tnotes-autoshow.fish ~/.config/fish/conf.d/
-ln -sf ~/tnotes/fish/completions/tn.fish ~/.config/fish/completions/
-# bash:  source ~/tnotes/completions/tn.bash   # from ~/.bashrc
-# zsh:    ln -sf ~/tnotes/completions/_tn ~/.zsh/completions/_tn  # $fpath entry
-tn path                             # prints store path; run once to confirm install
-python -m pytest -q                 # optional sanity check (needs the install above first)
+curl -fsSL https://raw.githubusercontent.com/BeshoyEhab/tnotes/master/install.sh | bash
 ```
+
+Or with a package manager:
+
+```bash
+pipx install git+https://github.com/BeshoyEhab/tnotes.git   # permanent install
+tn completions install                                      # completions + autoshow
+
+uvx --from git+https://github.com/BeshoyEhab/tnotes.git tn list   # try it, ephemeral
+```
+
+Or manually:
+
+```bash
+git clone https://github.com/BeshoyEhab/tnotes.git ~/tnotes && cd ~/tnotes
+uv sync                             # or: pip install -e .
+ln -sf ~/tnotes/.venv/bin/tn ~/.local/bin/tn
+tn completions install              # fish/bash/zsh completions + fish autoshow
+```
+
+`tn completions install` detects the shells you have and writes:
+
+| Shell | Files |
+|---|---|
+| fish | `~/.config/fish/completions/tn.fish`, `~/.config/fish/conf.d/tnotes-autoshow.fish` |
+| bash | `~/.local/share/bash-completion/completions/tn` |
+| zsh | `~/.zsh/completions/_tn` (plus a printed `fpath` hint for `~/.zshrc`) |
+
+`tn completions uninstall` removes them again. From a checkout,
+`python -m pytest -q` is an optional sanity check.
 
 ## Shell startup (automatic)
 
@@ -59,8 +82,13 @@ tn "buy milk" | tn -g "pay bills" | tn --url URL --title T --tags a,b | tn --cmd
 tn                      # picker here-only  tn --all # everywhere
 tn list [--all] [-g|-l] [--done] [--hidden]
 tn search Q [--all]     tn show [--startup] [-g|-l] [--done]
-tn show ID [--preview]  tn open ID [n]  tn run ID [n]
-tn edit ID | tn rm ID | tn done ID | tn undone ID | tn hide ID | tn unhide ID | tn path
+tn show ID|N [--preview]  tn open ID|N [n]  tn run ID|N [n]
+tn edit ID|N | tn rm ID|N | tn done ID|N | tn undone ID|N | tn hide ID|N | tn unhide ID|N | tn path
+tn completions [install|uninstall]     # shell completions + fish autoshow hook
+
+ID|N = entry id (or unique prefix) or the row number from `tn list`
+(numbers follow the list you read: `tn done N` = `tn list`, `tn undone N` =
+`tn list --done`). done/undone print the remaining tasks afterwards.
 
 Env: TNOTES_DIR, EDITOR/VISUAL, BROWSER, PAGER, NOTE_AUTOSHOW_GLOBAL=1.
 

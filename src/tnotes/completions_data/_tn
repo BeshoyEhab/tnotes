@@ -1,6 +1,6 @@
 #compdef tn
-# zsh completion for tn — link into $fpath, e.g.:
-#   ln -sf ~/tnotes/completions/_tn ~/.zsh/completions/_tn
+# zsh completion for tn — installed by `tn completions install` to
+# ~/.zsh/completions/_tn (add that dir to $fpath in ~/.zshrc).
 _tn() {
     local -a subs opts
     subs=(
@@ -17,6 +17,7 @@ _tn() {
         'unhide:show on open'
         'path:print store path'
         'tui:open TUI browser'
+        'completions:install shell completions'
     )
     opts=(
         '(-g --all)'{-g,--all}'[scope flag]'
@@ -39,21 +40,19 @@ _tn() {
         sub) _describe 'tn subcommand' subs ;;
         args)
             case "${words[2]}" in
-                list|search) _arguments '--all[all dirs]' '-g[global]' '-l[local]' '--done[completed]' '--hidden[hidden]' '--startup[startup]' '--preview[preview]' ;;
-                show|open|run|edit|rm|hide|unhide)
+                completions)
+                    _arguments '1:action:(install uninstall)' ;;
+                done|show|open|run|edit|rm|hide|unhide)
+                    # active rows = `tn list`; numbers strip before the old awk
                     _arguments '--all[all dirs]' '-g[global]' '-l[local]' '--done[completed]' '--hidden[hidden]' '--startup[startup]' '--preview[preview]'
                     local -a entries
-                    entries=(${(f)"$(tn list --done 2>/dev/null | awk '{id=$NF; NF-=2; sub(/^✔ /,""); sub(/^[^ ]+ /,""); printf "%s:%s %s\n", id, NR, $0}')"})
-                    _describe 'entry (id: number + title)' entries ;;
-                done)
-                    _arguments '--all[all dirs]' '-g[global]' '-l[local]' '--done[completed]' '--hidden[hidden]' '--startup[startup]' '--preview[preview]'
-                    local -a entries
-                    entries=(${(f)"$(tn list 2>/dev/null | awk '{id=$NF; NF-=2; sub(/^✔ /,""); sub(/^[^ ]+ /,""); printf "%s:%s %s\n", id, NR, $0}')"})
+                    entries=(${(f)"$(tn list 2>/dev/null | sed -E 's/^[0-9]+\. //' | awk '{id=$NF; NF-=2; sub(/^✔ /,""); sub(/^[^ ]+ /,""); printf "%s:%s %s\n", id, NR, $0}')"})
                     _describe 'entry (id: number + title)' entries ;;
                 undone)
                     _arguments '--all[all dirs]' '-g[global]' '-l[local]' '--done[completed]' '--hidden[hidden]' '--startup[startup]' '--preview[preview]'
                     local -a entries
-                    entries=(${(f)"$(tn list --done 2>/dev/null | grep '^✔' | awk '{id=$NF; NF-=2; sub(/^✔ /,""); sub(/^[^ ]+ /,""); printf "%s:%s %s\n", id, NR, $0}')"})
+                    # number = row of `tn list --done` (what `tn undone N` addresses)
+                    entries=(${(f)"$(tn list --done 2>/dev/null | sed -E 's/^[0-9]+\. //' | awk '$1=="✔" {id=$NF; NF-=2; sub(/^[^ ]+ /,""); printf "%s:%s %s\n", id, NR, $0}')"})
                     _describe 'entry (id: number + title)' entries ;;
             esac ;;
     esac

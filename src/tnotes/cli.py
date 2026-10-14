@@ -31,7 +31,7 @@ def _resolve_scope(args) -> tuple[str, str | None]:
 # subparsers — `tn <text>` and `tn done <id>` both misparsed (invalid choice).
 # So the quick-add positional is extracted manually; build_parser has no `text`.
 _SUB_COMMANDS = {"list", "search", "show", "open", "run", "edit", "rm",
-                 "done", "undone", "hide", "unhide", "path", "tui"}
+                 "done", "undone", "hide", "unhide", "path", "tui", "completions"}
 _VALUE_OPTIONS = {"--url", "--cmd", "--note", "--title", "--tags"}
 
 def _extract_text(argv: list[str]) -> tuple[str | None, list[str]]:
@@ -107,11 +107,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--preview", action="store_true")
     sub = p.add_subparsers(dest="sub")
     for name in ["list", "search", "show", "open", "run", "edit", "rm",
-                 "done", "undone", "hide", "unhide", "path", "tui"]:
+                 "done", "undone", "hide", "unhide", "path", "tui", "completions"]:
         s = sub.add_parser(name)
         if name in ("search", "show", "open", "run", "edit", "rm",
                     "done", "undone", "hide", "unhide"):
             s.add_argument("arg", nargs="?")
+        if name == "completions":
+            s.add_argument("arg", nargs="?", choices=["install", "uninstall"],
+                           default="install", help="install or remove shell completions")
         if name in ("open", "run"):
             s.add_argument("n", nargs="?", default="1")
         if name in ("list", "search", "show", "tui"):
@@ -136,6 +139,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.sub == "path":
         print(store.store_path())
         return 0
+    if args.sub == "completions":
+        from . import completions as _comp
+        return _comp.cmd_completions(args)
     if args.sub in ("done", "undone", "hide", "unhide"):
         try:
             if args.sub in ("done", "undone"):
