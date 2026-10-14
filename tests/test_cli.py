@@ -76,6 +76,62 @@ def test_done_numeric_out_of_range_hints_list(tmp_path, monkeypatch, capsys):
     assert main(["done", "9999999"]) == 1
     assert "tn list" in capsys.readouterr().err
 
+def test_list_prints_row_numbers(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    e1 = store.add_entry(type="note", title="alpha", body="b", tags=[],
+                         scope="global", cwd=None, show_on_open=True)
+    e2 = store.add_entry(type="note", title="beta", body="b", tags=[],
+                         scope="global", cwd=None, show_on_open=True)
+    assert main(["list"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].startswith("1. ") and e1.id in lines[0]
+    assert lines[1].startswith("2. ") and e2.id in lines[1]
+
+def test_done_marks_number_from_list_and_prints_remaining(tmp_path, monkeypatch, capsys):
+    import json
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    def _ent(eid, title):
+        return {"id": eid, "type": "note", "title": title, "body": "b", "tags": [],
+                "scope": "global", "cwd": None, "status": "active",
+                "show_on_open": True, "created": "t", "updated": "t"}
+    # id "1a2b3c" used to hijack `tn done 1`, leaving the real task active
+    (tmp_path / "tnotes.jsonl").write_text(
+        json.dumps(_ent("bb000b", "alpha")) + "\n" +
+        json.dumps(_ent("1a2b3c", "beta")) + "\n", encoding="utf-8")
+    assert main(["done", "1"]) == 0
+    out = capsys.readouterr().out
+    assert "done 1" in out and "alpha" in out
+    statuses = {e.id: e.status for e in store.load_all()}
+    assert statuses == {"bb000b": "done", "1a2b3c": "active"}
+    # remaining active tasks follow, with the same numbers as `tn list`
+    rest = [ln for ln in out.splitlines() if ln.startswith("1. ")]
+    assert rest and "beta" in rest[0] and "1a2b3c" in rest[0]
+
+def test_undone_already_active_reports_and_lists(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    e = store.add_entry(type="note", title="still", body="b", tags=[],
+                        scope="global", cwd=None, show_on_open=True)
+    assert main(["undone", e.id]) == 0
+    out = capsys.readouterr().out
+    assert "already active" in out and e.id in out
+
+def test_startup_numbers_continuous_across_sections(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    store.add_entry(type="note", title="g", body="g", tags=[],
+                    scope="global", cwd=None, show_on_open=True)
+    store.add_entry(type="note", title="l1", body="l1", tags=[],
+                    scope="local", cwd=os.path.realpath(os.getcwd()),
+                    show_on_open=True)
+    store.add_entry(type="note", title="l2", body="l2", tags=[],
+                    scope="local", cwd=os.path.realpath(os.getcwd()),
+                    show_on_open=True)
+    assert main(["show", "--startup", "--all"]) == 0
+    out = capsys.readouterr().out
+    # one continuous numbering: global 1, locals 2 and 3 (was: locals restart at 1)
+    assert "  1. " in out and "  2. " in out and "  3. " in out
+    assert out.count("  1. ") == 1
+
 def test_preview_caps_100_lines(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
     body = "\n".join(f"line {i}" for i in range(150))

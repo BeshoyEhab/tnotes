@@ -58,9 +58,15 @@ def _row_out(entry: Entry, color: bool) -> str:
 
 def cmd_list(args) -> int:
     color = _color_enabled()
-    for e in _entries_for(args):
-        print(_row_out(e, color))
+    for i, e in enumerate(_entries_for(args), 1):
+        print(f"{i}. {_row_out(e, color)}")
     return 0
+
+def print_active_list() -> None:
+    """The numbered remaining-task list (`tn list`), reused after done/undone."""
+    color = _color_enabled()
+    for i, e in enumerate(commands.do_list(), 1):
+        print(f"{i}. {_row_out(e, color)}")
 
 def cmd_search(args) -> int:
     scope = "here"
@@ -161,14 +167,18 @@ def _startup_line(entry: Entry, color: bool = False) -> str:
 
 def _startup_compact(entries: list[Entry], only_global: bool = False,
                      only_local: bool = False, color: bool = False) -> str:
-    """Old-note style greeting: numbered one-liners under section headers."""
+    """Old-note style greeting: numbered one-liners under section headers.
+    One continuous 1..N count across sections — matches `tn list` / `tn done N`."""
     head = (lambda s: _c(s, "1")) if color else (lambda s: s)
     out: list[str] = []
+    n = 0
     if not only_local:
         g = [e for e in entries if e.scope == "global"]
         if g:
             out.append(head("Global notes:"))
-            out += [f"  {i}. {_startup_line(e, color)}" for i, e in enumerate(g, 1)]
+            for e in g:
+                n += 1
+                out.append(f"  {n}. {_startup_line(e, color)}")
     if not only_global:
         loc = [e for e in entries if e.scope != "global"]
         if loc:
@@ -176,13 +186,18 @@ def _startup_compact(entries: list[Entry], only_global: bool = False,
                 out.append("")
             cwd = os.path.realpath(os.getcwd())
             out.append(head(f"This folder ({cwd}):"))
-            out += [f"  {i}. {_startup_line(e, color)}" for i, e in enumerate(loc, 1)]
+            for e in loc:
+                n += 1
+                out.append(f"  {n}. {_startup_line(e, color)}")
     return "\n".join(out) + "\n" if out else ""
 
 def cmd_show(args) -> int:
     if args.arg:  # show <id> [--preview]
         try:
-            e = commands.resolve_entry(args.arg)
+            # numbers follow the view you asked for: `tn list` or `tn list --done`
+            e = commands.resolve_entry(
+                args.arg,
+                numeric_mode="all" if getattr(args, "done", False) else "active")
         except EntryNotFound as exc:
             print(exc, file=sys.stderr)
             return 1

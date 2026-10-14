@@ -79,12 +79,14 @@ def add_entry(type: str, title: str, body: str, tags: list[str],
         save_all(entries)
         return entry
 
-def _match(entries: list[Entry], entry_id: str) -> Entry | None:
+def _match(entries: list[Entry], entry_id: str, *, prefix: bool = True) -> Entry | None:
     if not entry_id:
         raise KeyError(f"no entry {entry_id!r}")
     exact = [e for e in entries if e.id == entry_id]
     if exact:
         return exact[0]
+    if not prefix:
+        return None
     pref = [e for e in entries if e.id.startswith(entry_id)]
     if len(pref) == 1:
         return pref[0]
@@ -92,9 +94,9 @@ def _match(entries: list[Entry], entry_id: str) -> Entry | None:
         return None
     raise AmbiguousPrefix(f"ambiguous prefix {entry_id!r} ({len(pref)} matches)")
 
-def get_entry(entry_id: str) -> Entry | None:
+def get_entry(entry_id: str, *, prefix: bool = True) -> Entry | None:
     with _locked():
-        return _match(load_all(), entry_id)
+        return _match(load_all(), entry_id, prefix=prefix)
 
 def update_entry(entry_id: str, **fields) -> Entry:
     with _locked():
@@ -144,4 +146,7 @@ def visible_entries(cwd: str | None = None, scope: str = "here",
         else:
             if e.scope == "global" or (e.scope == "local" and e.cwd == cwd):
                 out.append(e)
+    # canonical order: global first, then locals (stable) — list, startup,
+    # picker and numeric addresses all count this same sequence
+    out.sort(key=lambda e: e.scope != "global")
     return out

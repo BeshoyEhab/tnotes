@@ -138,11 +138,19 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.sub in ("done", "undone", "hide", "unhide"):
         try:
-            if args.sub == "done":
-                commands.do_set_status(args.arg, "done")
-            elif args.sub == "undone":
-                commands.do_set_status(args.arg, "active")
-            elif args.sub == "hide":
+            if args.sub in ("done", "undone"):
+                want = "done" if args.sub == "done" else "active"
+                e = commands.resolve_entry(
+                    args.arg, numeric_mode="active" if want == "done" else "all")
+                if e.status == want:
+                    print(f"already {want} {e.id} · {e.title}")
+                else:
+                    commands.do_set_status(e.id, want)
+                    print(f"{args.sub} {args.arg} · {e.title}")
+                from . import cli_read as _r  # lazy: avoids importing picker at startup
+                _r.print_active_list()  # remaining tasks, same numbers as `tn list`
+                return 0
+            if args.sub == "hide":
                 commands.do_set_show(args.arg, False)
             else:
                 commands.do_set_show(args.arg, True)

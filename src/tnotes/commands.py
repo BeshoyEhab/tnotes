@@ -21,28 +21,33 @@ def do_search(q: str, **filters) -> list[Entry]:
     return [e for e in do_list(**filters)
             if q in (e.title + "\n" + e.body).lower()]
 
-def resolve_entry(entry_id: str, numeric_mode: str = "all") -> Entry:
+def _numeric_list(numeric_mode: str) -> list[Entry]:
+    if numeric_mode == "active":
+        return do_list(scope="here", cwd=None, include_done=False, all_dirs=False)
+    return do_list(scope="here", cwd=None, include_done=True, all_dirs=False)
+
+def resolve_entry(entry_id: str, numeric_mode: str = "active") -> Entry:
+    """Resolve by exact id, else row number of the matching `tn list` view,
+    else id prefix. A bare number is never an id prefix — that let ids like
+    `164dad` hijack `tn done 1`, marking the wrong (often already-done) task."""
+    try:
+        e = store.get_entry(entry_id, prefix=False)
+    except KeyError as exc:
+        raise EntryNotFound(str(exc)) from exc
+    if e is not None:
+        return e
+    if isinstance(entry_id, str) and entry_id.isdigit():
+        entries = _numeric_list(numeric_mode)
+        n = int(entry_id)
+        if 1 <= n <= len(entries):
+            return entries[n - 1]
+        raise EntryNotFound(f"no entry {entry_id} ({len(entries)} here — try tn list)")
     try:
         e = store.get_entry(entry_id)
     except KeyError as exc:
         raise EntryNotFound(str(exc)) from exc
     if e is not None:
         return e
-    if isinstance(entry_id, str) and entry_id.isdigit():
-        n = int(entry_id)
-        if numeric_mode == "active":
-            entries = do_list(scope="here", cwd=None,
-                              include_done=False, all_dirs=False)
-        elif numeric_mode == "done-only":
-            entries = [x for x in do_list(scope="here", cwd=None,
-                                          include_done=True, all_dirs=False)
-                       if x.status == "done"]
-        else:
-            entries = do_list(scope="here", cwd=None,
-                              include_done=True, all_dirs=False)
-        if 1 <= n <= len(entries):
-            return entries[n - 1]
-        raise EntryNotFound(f"no entry {entry_id} ({len(entries)} here — try tn list)")
     raise EntryNotFound(f"no entry {entry_id}")
 
 def _nth(entry: Entry, kind: str, n: int) -> str:
@@ -60,7 +65,8 @@ def do_run(entry_id: str, n: int = 1) -> tuple[Entry, str]:
     return (e := resolve_entry(entry_id)), _nth(e, "run", n)
 
 def do_set_status(entry_id: str, status: str) -> Entry:
-    mode = "active" if status == "done" else "done-only" if status == "active" else "all"
+    # numbers follow the list view you read: `tn list` for done, `tn list --done` for undone
+    mode = "active" if status == "done" else "all"
     return store.update_entry(resolve_entry(entry_id, numeric_mode=mode).id, status=status)
 
 def do_set_show(entry_id: str, show: bool) -> Entry:
