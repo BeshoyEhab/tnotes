@@ -46,6 +46,8 @@ def _targets(present: dict[str, bool]) -> list[tuple[str, Path, str]]:
 
 def _write(name: str, dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.is_symlink() or dest.exists():
+        dest.unlink()  # never write through a symlink; replaces dangling ones
     dest.write_text((_DATA / name).read_text(encoding="utf-8"), encoding="utf-8")
 
 def cmd_completions(args) -> int:

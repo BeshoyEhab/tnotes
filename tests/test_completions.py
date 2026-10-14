@@ -95,3 +95,18 @@ _tn_done_ids
     active, done = out.stdout.split("---\n")
     assert active.split() == ["aa000a", "bb000b", "cc000c"]
     assert done.split() == ["bb000b"]
+
+
+def test_install_replaces_dangling_symlink(tmp_path, monkeypatch):
+    # upgrading from the old `ln -sf ~/tnotes/fish/...` setup leaves symlinks
+    # pointing at moved files: install must replace them, not crash
+    home = _fake_home(tmp_path, monkeypatch, shells=("fish",))
+    f = _files(home)
+    f["fish_comp"].parent.mkdir(parents=True)
+    f["fish_comp"].symlink_to(tmp_path / "gone" / "tn.fish")  # dangling
+    f["fish_hook"].parent.mkdir(parents=True)
+    f["fish_hook"].symlink_to(tmp_path / "gone" / "tnotes-autoshow.fish")
+    assert main(["completions", "install"]) == 0
+    assert f["fish_comp"].is_file() and not f["fish_comp"].is_symlink()
+    assert f["fish_hook"].is_file() and not f["fish_hook"].is_symlink()
+    assert "complete -c tn" in f["fish_comp"].read_text(encoding="utf-8")
