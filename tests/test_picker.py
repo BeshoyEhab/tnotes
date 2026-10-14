@@ -35,6 +35,8 @@ class _FakeProc:
 
 def _patch_fzf(monkeypatch, out: bytes, rc: int = 0):
     from tnotes import picker as P
+    # tests must not depend on an fzf binary being installed (CI has none)
+    monkeypatch.setattr(P, "has_fzf", lambda: True)
     seen = {}
     def fake_run(argv, input=None, capture_output=False, **kw):
         seen["argv"] = argv
