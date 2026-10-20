@@ -304,6 +304,126 @@ async def test_filter_auto_expands_hits(tmp_path, monkeypatch):
         assert any("sub-note" in l for l in _labels(app))
         assert not any("root-note" in l for l in _labels(app))
 
+async def test_theme_header_and_rich_rows(tmp_path, monkeypatch):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    from textual.widgets import Label, Static
+    from tnotes.tui import TnotesApp
+    e = store.add_entry(type="url", title="tagged", body="https://x.example",
+                        tags=["docs", "read"], scope="global", cwd=None,
+                        show_on_open=True)
+    app = TnotesApp()
+    async with app.run_test(size=(120, 30)) as pilot:
+        await pilot.pause()
+        assert app.theme == "tnotes"
+        header = str(app.screen.query_one("#header", Static).render())
+        assert "tn" in header and "1 note" in header
+        row = app.screen.query_one(f"#row-{e.id}")
+        assert "tagged" in str(row.query_one(".row-main", Label).render())
+        assert "#docs #read" in str(row.query_one(".row-tags", Label).render())
+        assert e.id[:4] in str(row.query_one(".row-id", Label).render())
+
+
+async def test_preview_keeps_multiline_body(tmp_path, monkeypatch):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    store.add_entry(type="note", title="multi", body="line one\nline two",
+                    tags=[], scope="global", cwd=None, show_on_open=True)
+    from tnotes.tui import TnotesApp
+    app = TnotesApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        assert "line one  \nline two" in app.preview_source
+
+
+async def test_in_place_editor_enter_inserts_newline(tmp_path, monkeypatch):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    store.add_entry(type="note", title="edit me", body="base", tags=[],
+                    scope="global", cwd=None, show_on_open=True)
+    from tnotes.tui import TnotesApp
+    app = TnotesApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        await pilot.press("e")
+        await pilot.pause()
+        editor = app._editor
+        assert editor is not None and editor.has_focus
+        await pilot.press("A", "enter", "B")
+        await pilot.pause()
+        assert "\n" in editor.text
+
+
+async def test_in_place_editor_enter_does_not_run_entry_action(tmp_path, monkeypatch):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    store.add_entry(type="note", title="link note", body="see https://x.example",
+                    tags=[], scope="global", cwd=None, show_on_open=True)
+    import tnotes.tui as T
+    calls = {}
+    monkeypatch.setattr(T.TnotesApp, "_run_open",
+                        lambda self, url: calls.update(url=url))
+    from tnotes.tui import TnotesApp
+    app = TnotesApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        await pilot.press("e")
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert calls == {}
+        assert "\n" in app._editor.text
+
+
+async def test_in_place_editor_saves_even_if_focus_moves(tmp_path, monkeypatch):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    e = store.add_entry(type="note", title="edit me", body="base", tags=[],
+                        scope="global", cwd=None, show_on_open=True)
+    from tnotes.tui import TnotesApp
+    app = TnotesApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        await pilot.press("e")
+        await pilot.pause()
+        await pilot.press("X")
+        app.query_one("#filter").focus()
+        await pilot.pause()
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        assert app._editor is None
+        assert "X" in store.get_entry(e.id).body
+
+
+async def test_new_note_focuses_body_and_enter_adds_newline(tmp_path, monkeypatch):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    from textual.widgets import TextArea
+    from tnotes.tui import TnotesApp
+    app = TnotesApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        await pilot.press("n")
+        await pilot.pause()
+        body = app.screen.query_one("#nt-body", TextArea)
+        assert body.has_focus
+        await pilot.press("A", "enter", "B")
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        assert [x.body for x in store.load_all()] == ["A\nB"]
+
+
+async def test_new_note_title_enter_moves_to_body(tmp_path, monkeypatch):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    from textual.widgets import Input, TextArea
+    from tnotes.tui import TnotesApp
+    app = TnotesApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        await pilot.press("n")
+        await pilot.pause()
+        title = app.screen.query_one("#nt-title", Input)
+        title.focus()
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert app.screen.query_one("#nt-body", TextArea).has_focus
+
+
 async def test_confirm_dialog_yes_no_buttons(tmp_path, monkeypatch):
     monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
     store.add_entry(type="note", title="r", body="run `echo hi`", tags=[],

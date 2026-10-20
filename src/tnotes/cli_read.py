@@ -7,7 +7,8 @@ import textwrap
 from . import commands
 from .extract import extract_actions
 from .models import Entry, EntryNotFound
-from .picker import format_row
+from .palette import FAINT, FG, GREEN, ICONS, ORANGE, PURPLE, TYPE_COLORS
+from .textfmt import preserve_linebreaks
 
 def _autoshow_scope(args) -> tuple[str, bool]:
     if getattr(args, "g", False):
@@ -39,34 +40,63 @@ def _color_enabled() -> bool:
     except Exception:
         return False
 
-def _c(text: str, *codes: str) -> str:
-    return "".join(f"\033[{c}m" for c in codes) + text + "\033[0m"
+def _fg(hex_color: str, text: str, *, bold: bool = False,
+        dim: bool = False, strike: bool = False) -> str:
+    """Truecolor foreground; callers gate this behind _color_enabled()."""
+    h = hex_color.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    codes = []
+    if bold:
+        codes.append("1")
+    if dim:
+        codes.append("2")
+    if strike:
+        codes.append("9")
+    codes.append(f"38;2;{r};{g};{b}")
+    return f"\033[{';'.join(codes)}m{text}\033[0m"
 
 def _tags_out(entry: Entry, color: bool) -> str:
     if not entry.tags:
         return ""
-    tags = f" [{','.join(entry.tags)}]"
-    return _c(tags, "36") if color else tags
-
-def _row_out(entry: Entry, color: bool) -> str:
     if not color:
-        return f"{format_row(entry)} {entry.id}"
-    done = _c("✔ ", "32") if entry.status == "done" else ""
-    icon = ICONS.get(entry.type, "📝")
-    scope = _c("G" if entry.scope == "global" else "·", "2")
-    return f"{done}{icon} {entry.title}{_tags_out(entry, True)} {scope} {_c(entry.id, '2')}"
+        return " " + " ".join(f"#{t}" for t in entry.tags)
+    return "".join(_fg(PURPLE, f" #{t}") for t in entry.tags)
+
+def _row_out(entry: Entry, color: bool, number: int | None = None) -> str:
+    icon = ICONS.get(entry.type, ICONS["note"])
+    done = entry.status == "done"
+    tags = _tags_out(entry, color)
+    scope = " G" if entry.scope == "global" else ""
+    if not color:
+        prefix = f"{number}. " if number is not None else ""
+        check = "✔ " if done else ""
+        return f"{prefix}{check}{icon} {entry.title}{tags}{scope} · {entry.id}"
+    parts = []
+    if number is not None:
+        parts.append(_fg(FAINT, f"{number}. "))
+    if done:
+        parts.append(_fg(GREEN, "✔ ", bold=True))
+    parts.append(_fg(TYPE_COLORS.get(entry.type, GREEN), icon))
+    parts.append(" ")
+    parts.append(_fg(FG, entry.title, strike=done))
+    if tags:
+        parts.append(tags)
+    if scope:
+        parts.append(_fg(ORANGE, scope, bold=True))
+    parts.append(_fg(FAINT, f" · {entry.id}"))
+    return "".join(parts)
 
 def cmd_list(args) -> int:
     color = _color_enabled()
     for i, e in enumerate(_entries_for(args), 1):
-        print(f"{i}. {_row_out(e, color)}")
+        print(_row_out(e, color, number=i))
     return 0
 
 def print_active_list() -> None:
     """The numbered remaining-task list (`tn list`), reused after done/undone."""
     color = _color_enabled()
     for i, e in enumerate(commands.do_list(), 1):
-        print(f"{i}. {_row_out(e, color)}")
+        print(_row_out(e, color, number=i))
 
 def cmd_search(args) -> int:
     scope = "here"
@@ -82,12 +112,10 @@ def cmd_search(args) -> int:
         print(_row_out(e, color))
     return 0
 
-ICONS = {"url": "🔗", "cmd": "$", "note": "📝"}
-
 def render_preview(entry: Entry, actions: list[dict], max_lines: int = 100) -> str:
-    icon = ICONS.get(entry.type, "📝")
-    tags = f" [{','.join(entry.tags)}]" if entry.tags else ""
-    scope = "(G)" if entry.scope == "global" else "(·)"
+    icon = ICONS.get(entry.type, ICONS["note"])
+    tags = " " + " ".join(f"#{t}" for t in entry.tags) if entry.tags else ""
+    scope = "(G)" if entry.scope == "global" else ""
     done = "✔ " if entry.status == "done" else ""
     date = (entry.created or "")[:10]
     lines = [f"{done}{icon} {entry.title}{tags} {scope} {date}".rstrip()]
@@ -152,6 +180,9 @@ def _rich_preview(text: str) -> str:
     cols = os.environ.get("FZF_PREVIEW_COLUMNS", "")
     if cols.isdigit():
         cmd += ["--columns", cols]
+    # The preview is deliberately line-oriented; mdcat would otherwise collapse
+    # every soft line break into one paragraph.
+    text = preserve_linebreaks(text)
     try:
         p = subprocess.run(cmd, input=text.encode(), capture_output=True)
     except OSError:
@@ -160,16 +191,11 @@ def _rich_preview(text: str) -> str:
         return text
     return p.stdout.decode()
 
-def _startup_line(entry: Entry, color: bool = False) -> str:
-    icon = ICONS.get(entry.type, "📝")
-    base = f"{icon} {entry.title}{_tags_out(entry, color)}".rstrip()
-    return f"{base} · {entry.id}"
-
 def _startup_compact(entries: list[Entry], only_global: bool = False,
                      only_local: bool = False, color: bool = False) -> str:
     """Old-note style greeting: numbered one-liners under section headers.
     One continuous 1..N count across sections — matches `tn list` / `tn done N`."""
-    head = (lambda s: _c(s, "1")) if color else (lambda s: s)
+    head = (lambda s: _fg(ORANGE, s, bold=True)) if color else (lambda s: s)
     out: list[str] = []
     n = 0
     if not only_local:
@@ -178,7 +204,7 @@ def _startup_compact(entries: list[Entry], only_global: bool = False,
             out.append(head("Global notes:"))
             for e in g:
                 n += 1
-                out.append(f"  {n}. {_startup_line(e, color)}")
+                out.append("  " + _row_out(e, color, number=n))
     if not only_global:
         loc = [e for e in entries if e.scope != "global"]
         if loc:
@@ -188,7 +214,7 @@ def _startup_compact(entries: list[Entry], only_global: bool = False,
             out.append(head(f"This folder ({cwd}):"))
             for e in loc:
                 n += 1
-                out.append(f"  {n}. {_startup_line(e, color)}")
+                out.append("  " + _row_out(e, color, number=n))
     return "\n".join(out) + "\n" if out else ""
 
 def cmd_show(args) -> int:

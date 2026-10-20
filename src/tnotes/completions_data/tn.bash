@@ -1,10 +1,10 @@
 # bash completion for tn — installed by `tn completions install` to
 # ~/.local/share/bash-completion/completions/tn
-_tn_active_ids() {
-    tn list 2>/dev/null | awk '{print $NF}' 2>/dev/null
+_tn_active_numbers() {
+    tn list 2>/dev/null | sed -E 's/^[0-9]+\. //' 2>/dev/null | awk '{print NR}' 2>/dev/null
 }
-_tn_done_ids() {
-    tn list --done 2>/dev/null | sed -E 's/^[0-9]+\. //' 2>/dev/null | grep '^✔' 2>/dev/null | awk '{print $NF}' 2>/dev/null
+_tn_done_numbers() {
+    tn list --done 2>/dev/null | sed -E 's/^[0-9]+\. //' 2>/dev/null | awk '$1=="✔" {print NR}' 2>/dev/null
 }
 _tn() {
     local cur prev subs opts
@@ -20,14 +20,14 @@ _tn() {
             if [[ "$cur" == -* ]]; then
                 COMPREPLY=($(compgen -W "--all -g -l --done --hidden --startup --preview" -- "$cur"))
             else
-                COMPREPLY=($(compgen -W "$(_tn_active_ids)" -- "$cur"))
+                COMPREPLY=($(compgen -W "$(_tn_active_numbers)" -- "$cur"))
             fi
             return 0 ;;
         undone)
             if [[ "$cur" == -* ]]; then
                 COMPREPLY=($(compgen -W "--all -g -l --done --hidden --startup --preview" -- "$cur"))
             else
-                COMPREPLY=($(compgen -W "$(_tn_done_ids)" -- "$cur"))
+                COMPREPLY=($(compgen -W "$(_tn_done_numbers)" -- "$cur"))
             fi
             return 0 ;;
         completions)

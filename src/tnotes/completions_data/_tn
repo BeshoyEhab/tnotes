@@ -43,17 +43,17 @@ _tn() {
                 completions)
                     _arguments '1:action:(install uninstall)' ;;
                 done|show|open|run|edit|rm|hide|unhide)
-                    # active rows = `tn list`; numbers strip before the old awk
+                    # active rows = `tn list`; the value is the row number
                     _arguments '--all[all dirs]' '-g[global]' '-l[local]' '--done[completed]' '--hidden[hidden]' '--startup[startup]' '--preview[preview]'
                     local -a entries
-                    entries=(${(f)"$(tn list 2>/dev/null | sed -E 's/^[0-9]+\. //' | awk '{id=$NF; NF-=2; sub(/^✔ /,""); sub(/^[^ ]+ /,""); printf "%s:%s %s\n", id, NR, $0}')"})
-                    _describe 'entry (id: number + title)' entries ;;
+                    entries=(${(f)"$(tn list 2>/dev/null | sed -E 's/^[0-9]+\. //' | awk '{NF-=2; sub(/^✔ /,""); sub(/^[^ ]+ /,""); printf "%s:%s\n", NR, $0}')"})
+                    _describe 'entry (row: title)' entries ;;
                 undone)
                     _arguments '--all[all dirs]' '-g[global]' '-l[local]' '--done[completed]' '--hidden[hidden]' '--startup[startup]' '--preview[preview]'
                     local -a entries
                     # number = row of `tn list --done` (what `tn undone N` addresses)
-                    entries=(${(f)"$(tn list --done 2>/dev/null | sed -E 's/^[0-9]+\. //' | awk '$1=="✔" {id=$NF; NF-=2; sub(/^[^ ]+ /,""); printf "%s:%s %s\n", id, NR, $0}')"})
-                    _describe 'entry (id: number + title)' entries ;;
+                    entries=(${(f)"$(tn list --done 2>/dev/null | sed -E 's/^[0-9]+\. //' | awk '$1=="✔" {NF-=2; sub(/^✔ /,""); sub(/^[^ ]+ /,""); printf "%s:%s\n", NR, $0}')"})
+                    _describe 'entry (row: title)' entries ;;
             esac ;;
     esac
 }

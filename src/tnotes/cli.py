@@ -139,6 +139,32 @@ def main(argv: list[str] | None = None) -> int:
     if args.sub == "path":
         print(store.store_path())
         return 0
+    if args.sub in ("done", "undone", "rm", "hide", "unhide") and not args.arg:
+        # A one-shot action with no row/id: pick visually instead of making
+        # the user memorize `tn list` numbers.
+        from . import picker
+        if args.sub == "undone":
+            choices = [e for e in commands.do_list(include_done=True)
+                       if e.status == "done"]
+        else:
+            choices = commands.do_list(include_done=False)
+        if not choices:
+            nothing = {"done": "nothing to mark done",
+                       "undone": "nothing to mark active",
+                       "rm": "nothing to remove",
+                       "hide": "nothing to hide",
+                       "unhide": "nothing to show"}
+            print(nothing[args.sub])
+            return 0
+        if not picker.has_fzf() and not sys.stdin.isatty():
+            print("error: no picker available; use `tn <cmd> N`", file=sys.stderr)
+            return 1
+        prompts = {"done": "mark done", "undone": "mark active",
+                   "rm": "remove", "hide": "hide", "unhide": "show"}
+        picked = picker.pick_entry(choices, prompt=prompts[args.sub])
+        if picked is None:
+            return 0  # cancelled: not an error
+        args.arg = picked.id
     if args.sub == "completions":
         from . import completions as _comp
         return _comp.cmd_completions(args)

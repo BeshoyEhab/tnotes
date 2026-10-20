@@ -12,8 +12,8 @@ def _entry(**kw):
     return Entry(**base)
 
 def test_format_row_icons_scope():
-    assert format_row(_entry(type="url", title="t", tags=["a"], scope="global", status="active")).startswith("🔗 t [a] G")
-    assert format_row(_entry(type="cmd", title="t", tags=[], scope="local", status="active")).startswith("$ t ·")
+    assert format_row(_entry(type="url", title="t", tags=["a"], scope="global", status="active")).startswith("↗ t #a G")
+    assert format_row(_entry(type="cmd", title="t", tags=[], scope="local", status="active")).startswith("❯ t ·")
     assert "✔" in format_row(_entry(type="note", title="t", tags=[], scope="local", status="done"))
 
 def test_build_rows_tab_id():
@@ -79,3 +79,25 @@ def test_run_picker_select_with_query(monkeypatch):
     seen = _patch_fzf(monkeypatch, b"mil\n\n\xf0\x9f\x93\x9d milk \xc2\xb7\ta1b2c3\n")
     rows = [_entry(id="a1b2c3", type="note", title="milk", tags=[], scope="local", status="active")]
     assert P.run_picker(rows) == ("enter", "a1b2c3")
+
+def test_pick_entry_returns_selected(monkeypatch):
+    from tnotes import picker as P
+    seen = _patch_fzf(monkeypatch, b"\xf0\x9f\x93\x9d milk \xc2\xb7\ta1b2c3\n")
+    e = _entry(id="a1b2c3", type="note", title="milk", tags=[], scope="local", status="active")
+    assert P.pick_entry([e], prompt="mark done").id == "a1b2c3"
+    assert "--prompt" in seen["argv"]
+    assert "mark done" in " ".join(seen["argv"])
+
+
+def test_pick_entry_abort_returns_none(monkeypatch):
+    from tnotes import picker as P
+    _patch_fzf(monkeypatch, b"", rc=130)
+    e = _entry(id="a1b2c3")
+    assert P.pick_entry([e]) is None
+
+
+def test_pick_entry_without_fzf_and_not_tty_is_none(monkeypatch):
+    from tnotes import picker as P
+    monkeypatch.setattr(P, "has_fzf", lambda: False)
+    monkeypatch.setattr(P.sys.stdin, "isatty", lambda: False)
+    assert P.pick_entry([_entry(id="a1b2c3")]) is None

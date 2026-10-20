@@ -1,16 +1,83 @@
 """Persistent textual TUI. Browse shell in this task; actions in the next."""
 import os
+from rich.text import Text
 from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.screen import ModalScreen
+from textual.theme import Theme
 from textual.widgets import Button, Input, Label, ListItem, ListView, Markdown, Static, TextArea
 from . import actions, commands
 from .extract import extract_actions
 from .models import Entry
-from .picker import format_row
+from .palette import (AQUA, BG, BLUE, FAINT, FG, GREEN, MUTED, ORANGE, PANEL,
+                      PURPLE, RED, SURFACE, TYPE_COLORS, YELLOW, ICONS)
+from .textfmt import preserve_linebreaks
+
+TN_THEME = Theme(
+    name="tnotes",
+    primary=ORANGE,
+    secondary=BLUE,
+    accent=YELLOW,
+    foreground=FG,
+    background=BG,
+    surface=SURFACE,
+    panel=PANEL,
+    success=GREEN,
+    warning=YELLOW,
+    error=RED,
+    dark=True,
+)
+
+
+def _kb(key: str, desc: str) -> Text:
+    """A key cap plus a quiet description, without a filled button."""
+    label = Text()
+    label.append(key, style=f"bold {ORANGE}")
+    # A non-breaking space survives Textual's button line trimming.
+    label.append(f"\u00a0{desc}", style=MUTED)
+    return label
+
+
+def _short_path(path: str) -> str:
+    home = os.path.expanduser("~")
+    return ("~" + path[len(home):]) if home and path.startswith(home) else path
+
+
+def _entry_text(entry: Entry) -> Text:
+    text = Text()
+    if entry.status == "done":
+        text.append("✔ ", style=f"bold {GREEN}")
+    icon = ICONS.get(entry.type, ICONS["note"])
+    text.append(icon + "  ", style=TYPE_COLORS.get(entry.type, GREEN))
+    text.append(entry.title, style=f"strike {FAINT}" if entry.status == "done" else FG)
+    return text
+
+
+def _entry_tags(entry: Entry) -> Text:
+    if len(entry.tags) > 1:
+        shown = f"#{entry.tags[0]} #{entry.tags[1]}"
+    elif entry.tags:
+        shown = f"#{entry.tags[0]}"
+    else:
+        shown = ""
+    if len(shown) > 18:
+        shown = shown[:17] + "…"
+    return Text(shown, style=PURPLE)
+
+
+def _entry_id(entry: Entry) -> Text:
+    return Text(f"· {entry.id[:4]}", style=FAINT)
+
+
+def _group_text(label: str, count: int, expanded: bool) -> Text:
+    text = Text()
+    text.append("▾ " if expanded else "▸ ", style=YELLOW)
+    text.append(label, style=f"bold {AQUA}")
+    text.append(f" ({count})", style=MUTED)
+    return text
 
 
 def selection_actions(entry: Entry | None) -> dict:
@@ -73,12 +140,22 @@ class ConfirmScreen(ModalScreen):
 
 
 class NewNoteScreen(ModalScreen):
-    BINDINGS = [("escape", "dismiss", "cancel"), ("ctrl+s", "save", "save")]
+    BINDINGS = [("escape", "dismiss", "cancel"),
+                ("ctrl+s", "save", "save")]
 
     def compose(self) -> ComposeResult:
-        yield Label("new note (ctrl-s save, esc cancel)")
+        yield Label("new note · ctrl-s save · esc cancel")
         yield Input(placeholder="title (optional)", id="nt-title")
         yield TextArea(id="nt-body")
+
+    def on_mount(self) -> None:
+        # The body is the point of the dialog; start there so Enter inserts a
+        # newline instead of sitting in the optional one-line title.
+        self.query_one("#nt-body", TextArea).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "nt-title":
+            self.query_one("#nt-body", TextArea).focus()
 
     def action_save(self) -> None:
         title = self.query_one("#nt-title", Input).value
@@ -98,6 +175,7 @@ class GroupSelected(Message):
 
 class TnotesApp(App):
     CSS_PATH = "tnotes.css"
+    TITLE = "tn"
     BINDINGS = [("q", "quit", "quit"), ("/", "focus_filter", "filter"),
                 ("j", "move_down", "down"), ("k", "move_up", "up"),
                 ("o", "open_link", "open"), ("r", "run_cmd", "run"),
@@ -131,29 +209,35 @@ class TnotesApp(App):
         self.current_entry: Entry | None = None
         self.current_group: str | None = None
         self._hold_collapsed: str | None = None
+        self._effective: set[str] = set()
         self.preview_source: str = ""
         self.keybar_plain: str = ""
         self._editing: Entry | None = None
         self._editor: TextArea | None = None
 
     def compose(self) -> ComposeResult:
-        yield Input(placeholder="filter…", id="filter")
+        yield Static(id="header")
+        yield Input(placeholder="/ filter…", id="filter")
         with Horizontal(id="body"):
             yield ListView(id="entries")
-            yield Markdown(id="preview")
+            with Vertical(id="preview-pane"):
+                yield Static("PREVIEW", id="preview-title")
+                yield Markdown(id="preview")
         with Horizontal(id="keybar"):
-            yield Button("^ parent", id="kb-up", compact=True)
-            yield Button("/ filter", id="kb-filter", compact=True)
-            yield Button("o open", id="kb-open", compact=True)
-            yield Button("r run", id="kb-run", compact=True)
-            yield Button("c copy", id="kb-copy", compact=True)
-            yield Button("e edit", id="kb-edit", compact=True)
-            yield Button("d done", id="kb-done", compact=True)
-            yield Button("h hide", id="kb-hide", compact=True)
-            yield Button("n new", id="kb-new", compact=True)
-            yield Button("q quit", id="kb-quit", compact=True)
+            yield Button(_kb("^", "parent"), id="kb-up", compact=True)
+            yield Button(_kb("/", "filter"), id="kb-filter", compact=True)
+            yield Button(_kb("o", "open"), id="kb-open", compact=True)
+            yield Button(_kb("r", "run"), id="kb-run", compact=True)
+            yield Button(_kb("c", "copy"), id="kb-copy", compact=True)
+            yield Button(_kb("e", "edit"), id="kb-edit", compact=True)
+            yield Button(_kb("d", "done"), id="kb-done", compact=True)
+            yield Button(_kb("h", "hide"), id="kb-hide", compact=True)
+            yield Button(_kb("n", "new"), id="kb-new", compact=True)
+            yield Button(_kb("q", "quit"), id="kb-quit", compact=True)
 
     async def on_mount(self) -> None:
+        self.register_theme(TN_THEME)
+        self.theme = "tnotes"
         self.refresh_entries()
         self.update_keybar()
         # Input auto-focuses on mount; steal it so j/k navigate, not type.
@@ -172,10 +256,6 @@ class TnotesApp(App):
             self.entries = commands.do_list(scope="here", cwd=self.root,
                                             all_dirs=True,
                                             include_done=self.include_done)
-        try:
-            self.query_one("#filter", Input).placeholder = f"{self.root} · filter…"
-        except Exception:
-            pass
         self.apply_filter()
         if keep:
             same = [e for e in self.shown if e.id == keep]
@@ -188,13 +268,16 @@ class TnotesApp(App):
         groups: list[tuple[str, str, list[Entry]]] = []
         if not self.exact_only:
             g = [e for e in self.shown if e.scope == "global"]
-            groups.append(("global", f"🌍 Global ({len(g)})", g))
+            if g:
+                groups.append(("global", "Global", g))
         if self.global_only:
             return groups
         locals_ = [e for e in self.shown if e.scope == "local"]
+        root_label = os.path.basename(self.root.rstrip(os.sep)) or self.root
         if self.exact_only:
             here = [e for e in locals_ if e.cwd == self.root]
-            groups.append((self.root, f"📁 . ({len(here)})", here))
+            if here:
+                groups.append((self.root, root_label, here))
             return groups
         bydir: dict[str, list[Entry]] = {}
         for e in locals_:
@@ -202,11 +285,30 @@ class TnotesApp(App):
                 bydir.setdefault(e.cwd or self.root, []).append(e)
         if self.root in bydir:
             here = bydir.pop(self.root)
-            groups.append((self.root, f"📁 . ({len(here)})", here))
+            groups.append((self.root, root_label, here))
         for d in sorted(bydir):
             rel = os.path.relpath(d, self.root)
-            groups.append((d, f"📁 {rel} ({len(bydir[d])})", bydir[d]))
+            groups.append((d, rel, bydir[d]))
         return groups
+
+    def update_header(self) -> None:
+        try:
+            header = self.query_one("#header", Static)
+        except Exception:
+            return  # pre-mount
+        where = "global" if self.global_only else _short_path(self.root)
+        total = len(self.entries)
+        if len(self.shown) == total:
+            count = f"{total} note" + ("" if total == 1 else "s")
+        else:
+            count = f"{len(self.shown)} of {total}"
+        line = Text()
+        line.append("tn", style=f"bold {ORANGE}")
+        line.append("   ")
+        line.append(where, style=MUTED)
+        line.append("   ·   ", style=FAINT)
+        line.append(count, style=MUTED)
+        header.update(line)
 
     def apply_filter(self) -> None:
         q = self.query.lower()
@@ -219,12 +321,14 @@ class TnotesApp(App):
             if not self.expanded:
                 self.expanded = {"global", self.root}
             effective = set(self.expanded)
+        self._effective = effective
         self.rows = []
         for key, _, ents in self.groups:
             self.rows.append(("group", key))
             if key in effective:
                 self.rows += [("entry", e.id) for e in ents]
         self._rebuild_rows()
+        self.update_header()
         if self.current_entry and self.current_entry.id not in {e.id for e in self.shown}:
             self.select_entry(self.shown[0] if self.shown else None)
 
@@ -243,15 +347,23 @@ class TnotesApp(App):
             lv = self.query_one("#entries", ListView)
         except Exception:
             return
-        labels = {key: label for key, label, _ in self.groups}
+        info = {key: (label, len(ents)) for key, label, ents in self.groups}
         rows = []
         for n, (kind, ref) in enumerate(self.rows):
             if kind == "group":
-                rows.append(ListItem(Label(labels.get(ref, ref)), id=f"grp-{n}"))
+                label, count = info.get(ref, (ref, 0))
+                rows.append(ListItem(
+                    Label(_group_text(label, count, ref in self._effective)),
+                    id=f"grp-{n}", classes="group"))
             else:
                 e = self._entry_by_id(ref)
                 if e is not None:
-                    rows.append(ListItem(Label(format_row(e)), id=f"row-{e.id}"))
+                    cells = [Label(_entry_text(e), classes="row-main")]
+                    if e.tags:
+                        cells.append(Label(_entry_tags(e), classes="row-tags"))
+                    cells.append(Label(_entry_id(e), classes="row-id"))
+                    rows.append(ListItem(Horizontal(*cells, classes="row"),
+                                         id=f"row-{e.id}"))
 
         async def _do() -> None:
             await lv.clear()
@@ -350,12 +462,14 @@ class TnotesApp(App):
     @staticmethod
     def preview_markdown(entry: Entry | None) -> str:
         if entry is None:
-            return "_No notes here yet — press `n` to add one._"
+            return "_No notes here yet — press **n** to add one._"
         head = f"## {entry.title or '(untitled)'}"
-        meta = (f"{entry.type} · {entry.scope} · {entry.status} · "
-                f"{'shown' if entry.show_on_open else 'hidden'}")
-        tags = f"🏷️ {', '.join(entry.tags)}" if entry.tags else ""
-        return "\n\n".join(p for p in [head, meta, tags, entry.body] if p)
+        meta = (f"*{entry.type} · {entry.scope} · {entry.status} · "
+                f"{'shown' if entry.show_on_open else 'hidden'} · {entry.id}*")
+        tags = ("tags: " + " ".join(f"#{t}" for t in entry.tags)
+                if entry.tags else "")
+        body = preserve_linebreaks(entry.body) if entry.body else ""
+        return "\n\n".join(p for p in [head, meta, tags, body] if p)
 
     _KB_ACTIONS = {"kb-up": "go_parent", "kb-filter": "focus_filter", "kb-open": "open_link",
                    "kb-run": "run_cmd", "kb-copy": "copy_body",
@@ -378,10 +492,15 @@ class TnotesApp(App):
             return  # pre-mount (tests poking logic without compose)
         bar.query_one("#kb-open", Button).display = bool(acts["opens"])
         bar.query_one("#kb-run", Button).display = bool(acts["runs"])
+        has_entry = self.current_entry is not None
+        for button_id in ("kb-copy", "kb-edit", "kb-done", "kb-hide"):
+            bar.query_one(f"#{button_id}", Button).display = has_entry
         if acts["opens"]:
-            bar.query_one("#kb-open", Button).label = f"o open×{len(acts['opens'])}"
+            bar.query_one("#kb-open", Button).label = _kb(
+                "o", f"open×{len(acts['opens'])}")
         if acts["runs"]:
-            bar.query_one("#kb-run", Button).label = f"r run×{len(acts['runs'])}"
+            bar.query_one("#kb-run", Button).label = _kb(
+                "r", f"run×{len(acts['runs'])}")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         action = self._KB_ACTIONS.get(event.button.id or "")
@@ -407,7 +526,10 @@ class TnotesApp(App):
             self.exit()
 
     def check_action(self, action: str, parameters) -> bool | None:
-        if action == "primary" and isinstance(self.screen, ModalScreen):
+        # Enter belongs to the text editor while it is open: newline, not an
+        # entry action. Otherwise the priority binding swallows every Enter.
+        if action == "primary" and (isinstance(self.screen, ModalScreen)
+                                    or self._editor is not None):
             return False
         if self.current_entry is None and action in (
                 "open_link", "run_cmd", "copy_body", "edit_here",
@@ -546,16 +668,18 @@ class TnotesApp(App):
         self._editing = self.current_entry
         preview = self.query_one("#preview")
         self._editor = TextArea(self.current_entry.body, id="editor")
-        self.query_one("#body", Horizontal).mount(self._editor, after=preview)
+        self.query_one("#preview-pane", Vertical).mount(self._editor, after=preview)
         preview.display = False
+        self.query_one("#preview-title", Static).update(
+            "EDITING · ctrl-s save · esc cancel")
         self._editor.focus()
 
     async def on_key(self, event: events.Key) -> None:
-        if getattr(self, "_editor", None) is not None and self._editor.has_focus:
+        if getattr(self, "_editor", None) is not None:
             if event.key == "ctrl+s":
                 event.prevent_default()
                 self._save_edit()
-            elif event.key == "escape":
+            elif event.key == "escape" and self._editor.has_focus:
                 event.prevent_default()
                 self._cancel_edit()
 
@@ -570,6 +694,7 @@ class TnotesApp(App):
 
     def _close_editor(self) -> None:
         self.query_one("#preview").display = True
+        self.query_one("#preview-title", Static).update("PREVIEW")
         self._editor.remove()
         self._editor = None
         self.refresh_entries()

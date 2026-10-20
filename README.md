@@ -84,11 +84,14 @@ tn list [--all] [-g|-l] [--done] [--hidden]
 tn search Q [--all]     tn show [--startup] [-g|-l] [--done]
 tn show ID|N [--preview]  tn open ID|N [n]  tn run ID|N [n]
 tn edit ID|N | tn rm ID|N | tn done ID|N | tn undone ID|N | tn hide ID|N | tn unhide ID|N | tn path
+tn done | tn undone | tn rm | tn hide | tn unhide   # pick one visually
 tn completions [install|uninstall]     # shell completions + fish autoshow hook
 
 ID|N = entry id (or unique prefix) or the row number from `tn list`
 (numbers follow the list you read: `tn done N` = `tn list`, `tn undone N` =
-`tn list --done`). done/undone print the remaining tasks afterwards.
+`tn list --done`). With no ID/N, those action commands open the fzf picker
+(or a numbered prompt on a plain TTY). done/undone print the remaining tasks
+afterwards.
 
 Env: TNOTES_DIR, EDITOR/VISUAL, BROWSER, PAGER, NOTE_AUTOSHOW_GLOBAL=1.
 
@@ -99,11 +102,15 @@ windows stack panes via the compact layout). Entries are grouped by
 directory — `enter`/click a folder to expand it, `backspace` (or the
 `^ parent` button) to go up. Every keybar action is also a
 clickable button; clicking a row selects it, clicking a dialog field focuses
-it. Mouse needs terminal support — inside tmux set `set -g mouse on`.
+it. New notes open with the body focused so `enter` inserts a newline; the
+title field is optional. Line breaks are kept in the editor and in TUI/CLI
+previews, so a note you type on three lines stays three lines. Mouse needs
+terminal support — inside tmux set `set -g mouse on`.
 
 | Key | Action |
 |---|---|
 | `j` / `k` | navigate entries |
+| `enter` | open/run the selected entry, or expand a folder |
 | `/` | focus filter |
 | `o` | open first link, or pick from submenu when several |
 | `r` | run first command (with confirm), or pick from submenu |

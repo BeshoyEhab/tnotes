@@ -87,6 +87,114 @@ def test_list_prints_row_numbers(tmp_path, monkeypatch, capsys):
     assert lines[0].startswith("1. ") and e1.id in lines[0]
     assert lines[1].startswith("2. ") and e2.id in lines[1]
 
+def test_list_rows_use_glyphs_hash_tags_and_id_tail(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    e = store.add_entry(type="note", title="alpha", body="b", tags=["a", "b"],
+                        scope="global", cwd=None, show_on_open=True)
+    assert main(["list"]) == 0
+    line = capsys.readouterr().out.splitlines()[0]
+    assert line.startswith("1. ✎ alpha #a #b G · ")
+    assert line.endswith(e.id)
+
+def test_done_rows_keep_check_marker_and_title(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    e = store.add_entry(type="note", title="finished", body="b", tags=[],
+                        scope="local", cwd=os.path.realpath(os.getcwd()),
+                        show_on_open=True)
+    store.update_entry(e.id, status="done")
+    assert main(["list", "--done"]) == 0
+    out = capsys.readouterr().out
+    assert "✔ ✎ finished" in out and f" · {e.id}" in out
+
+def test_done_without_arg_uses_picker(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    cwd = os.path.realpath(os.getcwd())
+    e = store.add_entry(type="note", title="alpha", body="b", tags=[],
+                        scope="local", cwd=cwd, show_on_open=True)
+    store.add_entry(type="note", title="beta", body="b", tags=[],
+                    scope="local", cwd=cwd, show_on_open=True)
+    from tnotes import picker
+    seen = {}
+    def fake(entries, prompt="select", header=None):
+        seen["titles"] = [x.title for x in entries]
+        seen["prompt"] = prompt
+        return entries[0]
+    monkeypatch.setattr(picker, "pick_entry", fake)
+    assert main(["done"]) == 0
+    assert seen["titles"] == ["alpha", "beta"] and seen["prompt"] == "mark done"
+    assert store.get_entry(e.id).status == "done"
+
+
+def test_undone_without_arg_offers_only_done_entries(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    cwd = os.path.realpath(os.getcwd())
+    store.add_entry(type="note", title="active", body="b", tags=[],
+                    scope="local", cwd=cwd, show_on_open=True)
+    done = store.add_entry(type="note", title="finished", body="b", tags=[],
+                           scope="local", cwd=cwd, show_on_open=True)
+    store.update_entry(done.id, status="done")
+    from tnotes import picker
+    seen = {}
+    def fake(entries, prompt="select", header=None):
+        seen["titles"] = [x.title for x in entries]
+        return entries[0]
+    monkeypatch.setattr(picker, "pick_entry", fake)
+    assert main(["undone"]) == 0
+    assert seen["titles"] == ["finished"]
+    assert store.get_entry(done.id).status == "active"
+
+
+def test_no_arg_picker_cancel_is_a_noop(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    e = store.add_entry(type="note", title="alpha", body="b", tags=[],
+                        scope="local", cwd=os.path.realpath(os.getcwd()),
+                        show_on_open=True)
+    from tnotes import picker
+    monkeypatch.setattr(picker, "pick_entry", lambda *a, **k: None)
+    assert main(["rm"]) == 0
+    assert store.get_entry(e.id) is not None
+
+
+def test_no_arg_hide_unhide_rm_route_through_picker(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    cwd = os.path.realpath(os.getcwd())
+    from tnotes import picker
+    picked = {}
+    monkeypatch.setattr(picker, "pick_entry", lambda *a, **k: picked["entry"])
+
+    hidden = store.add_entry(type="note", title="hide me", body="b", tags=[],
+                             scope="local", cwd=cwd, show_on_open=True)
+    picked["entry"] = hidden
+    assert main(["hide"]) == 0
+    assert store.get_entry(hidden.id).show_on_open is False
+
+    shown = store.add_entry(type="note", title="show me", body="b", tags=[],
+                            scope="local", cwd=cwd, show_on_open=False)
+    picked["entry"] = shown
+    assert main(["unhide"]) == 0
+    assert store.get_entry(shown.id).show_on_open is True
+
+    removed = store.add_entry(type="note", title="remove me", body="b", tags=[],
+                              scope="local", cwd=cwd, show_on_open=True)
+    picked["entry"] = removed
+    assert main(["rm"]) == 0
+    assert store.get_entry(removed.id) is None
+
+
+def test_no_arg_picker_empty_store_says_nothing_to_do(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    from tnotes import picker
+    monkeypatch.setattr(picker, "pick_entry", lambda *a, **k: (_ for _ in ()).throw(AssertionError))
+    assert main(["done"]) == 0
+    assert "nothing to" in capsys.readouterr().out
+
+
+
 def test_done_marks_number_from_list_and_prints_remaining(tmp_path, monkeypatch, capsys):
     import json
     monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
@@ -285,4 +393,32 @@ def test_startup_headers_bold_when_color(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(R, "_color_enabled", lambda: True)
     assert main(["show", "--startup", "--all"]) == 0
     out = capsys.readouterr().out
-    assert "\033[1mGlobal notes:\033[0m" in out
+    assert "\033[1;38;2;254;128;25mGlobal notes:\033[0m" in out
+
+
+def test_rich_preview_preserves_line_breaks(monkeypatch):
+    import tnotes.cli_read as R
+    seen = {}
+
+    class Done:
+        returncode = 0
+        stdout = b"rendered"
+
+    def fake_run(cmd, input, capture_output):
+        seen["input"] = input
+        return Done()
+
+    monkeypatch.setenv("FZF_PREVIEW_COLUMNS", "80")
+    monkeypatch.setattr(R.shutil, "which", lambda _: "/usr/bin/mdcat")
+    monkeypatch.setattr(R.subprocess, "run", fake_run)
+    assert R._rich_preview("one\ntwo\n---\nthree") == "rendered"
+    assert seen["input"] == b"one  \ntwo  \n---\nthree"
+
+
+def test_show_keeps_multiline_body(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("TNOTES_DIR", str(tmp_path))
+    e = store.add_entry(type="note", title="multi", body="line one\nline two\nline three",
+                        tags=[], scope="global", cwd=None, show_on_open=True)
+    assert main(["show", e.id]) == 0
+    out = capsys.readouterr().out
+    assert "line one\nline two\nline three" in out

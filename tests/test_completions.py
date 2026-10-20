@@ -1,6 +1,9 @@
 # tests/test_completions.py
+import shutil
 import subprocess
 from pathlib import Path
+
+import pytest
 
 from tnotes import completions as C
 from tnotes.cli import main
@@ -77,8 +80,9 @@ def test_shipped_scripts_tolerate_numbered_rows():
                 assert "s/^[0-9]+\\. //" in line, name  # strip before the anchor
 
 
-def test_bash_completion_ids_from_live_numbered_rows(tmp_path):
-    # source the shipped bash completion with a stub `tn` and check the ids
+def test_bash_completion_offers_row_numbers(tmp_path):
+    # The row is what `tn done N` addresses, so completion values must be
+    # numbers — ids like 1a2b3c made `tn done 1<TAB>` insert the wrong entry.
     fixture = tmp_path / "rows.txt"
     fixture.write_text(
         "1. 📝 alpha · aa000a\n"
@@ -87,14 +91,60 @@ def test_bash_completion_ids_from_live_numbered_rows(tmp_path):
     script = f'''
 tn() {{ cat {fixture}; }}
 source {Path(C._DATA) / "tn.bash"}
-_tn_active_ids
+_tn_active_numbers
 echo ---
-_tn_done_ids
+_tn_done_numbers
 '''
     out = subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=True)
     active, done = out.stdout.split("---\n")
-    assert active.split() == ["aa000a", "bb000b", "cc000c"]
-    assert done.split() == ["bb000b"]
+    assert active.split() == ["1", "2", "3"]
+    assert done.split() == ["2"]
+
+
+def test_fish_completion_offers_row_number_not_id_prefix(tmp_path):
+    fish = shutil.which("fish")
+    if fish is None:
+        pytest.skip("fish not installed")
+    fixture = tmp_path / "rows.txt"
+    # row 1's id deliberately does not start with 1; row 2's does.
+    fixture.write_text(
+        "1. 📝 first · 2b000b\n"
+        "2. 📝 hash · 1a2b3c\n", encoding="utf-8")
+    script = f'''
+set -g fish_complete_path /nonexistent
+function tn; cat {fixture}; end
+source {Path(C._DATA) / "tn.fish"}
+complete -C "tn done 1"
+'''
+    out = subprocess.run([fish, "-c", script], capture_output=True, text=True, check=True)
+    values = [line.split("\t")[0] for line in out.stdout.splitlines() if line.strip()]
+    assert values == ["1"]
+
+
+def test_fish_done_completion_strips_check_and_type_glyph(tmp_path):
+    fish = shutil.which("fish")
+    if fish is None:
+        pytest.skip("fish not installed")
+    fixture = tmp_path / "rows.txt"
+    fixture.write_text(
+        "1. ✎ active · aa000a\n"
+        "2. ✔ ✎ finished · bb000b\n", encoding="utf-8")
+    script = f'''
+set -g fish_complete_path /nonexistent
+function tn; cat {fixture}; end
+source {Path(C._DATA) / "tn.fish"}
+complete -C "tn undone "
+'''
+    out = subprocess.run([fish, "-c", script], capture_output=True, text=True, check=True)
+    lines = [line for line in out.stdout.splitlines() if line.strip()]
+    assert lines == ["2\tfinished"]
+
+
+def test_zsh_completion_offers_row_numbers():
+    text = (Path(C._DATA) / "_tn").read_text(encoding="utf-8")
+    assert 'printf "%s:%s\\n", NR, $0' in text
+    # the done branch drops both the check mark and the type glyph
+    assert 'sub(/^✔ /,""); sub(/^[^ ]+ /,"")' in text
 
 
 def test_install_replaces_dangling_symlink(tmp_path, monkeypatch):

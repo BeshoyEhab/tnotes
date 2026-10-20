@@ -29,21 +29,24 @@ complete -c tn -n __fish_use_subcommand -a tui -d "open TUI browser"
 complete -c tn -n __fish_use_subcommand -a completions -d "install shell completions"
 complete -c tn -l startup -d "startup autoshow (silent when empty)"
 complete -c tn -l preview -d "preview rendering"
-# One ID-main row per entry; the number is the row of the matching list view.
+# One row per entry: the completion value is the row number of the matching
+# list view, the description is the title. Typing `tn done 1` must therefore
+# resolve to row 1, not to an id that happens to start with "1".
 # done/show/... -> active rows (`tn list`); undone -> done rows of `tn list --done`.
 # Rows arrive numbered ("1. …"), so strip the number before parsing the rest.
 function __tn_active
     tn list 2>/dev/null | sed -E 's/^[0-9]+\. //' | awk '{
-        id=$NF; NF-=2;
+        NF-=2;
         sub(/^✔ /,""); sub(/^[^ ]+ /,"");
-        printf "%s\t%s %s\n", id, NR, $0;
+        printf "%s\t%s\n", NR, $0;
     }' 2>/dev/null
 end
 function __tn_done_only
     tn list --done 2>/dev/null | sed -E 's/^[0-9]+\. //' | awk '$1=="✔" {
-        id=$NF; NF-=2;
+        NF-=2;
+        sub(/^✔ /,"");
         sub(/^[^ ]+ /,"");
-        printf "%s\t%s %s\n", id, NR, $0;
+        printf "%s\t%s\n", NR, $0;
     }' 2>/dev/null
 end
 complete -c tn -n "__fish_seen_subcommand_from done" -a "(__tn_active)"
